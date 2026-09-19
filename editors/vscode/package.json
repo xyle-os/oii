@@ -2,7 +2,7 @@
   "name": "oii",
   "displayName": "OII",
   "description": "OII config format. Brackets for scope.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "celvra",
   "license": "Apache-2.0",
   "icon": "icon.svg",

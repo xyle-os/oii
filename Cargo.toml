@@ -1,6 +1,6 @@
 [package]
 name = "oii"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "OII config format. Brackets for scope. Parser and formatter"
 authors = ["Celvra"]

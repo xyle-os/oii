@@ -30,7 +30,14 @@ fn vscode_files_parse() {
     )
     .unwrap();
     assert_eq!(pkg["contributes"]["languages"][0]["id"], "oii");
-    assert_eq!(pkg["version"], "0.1.0", "keep in sync with Cargo.toml");
+    // extension version tracks the crate. drift on either side fails here.
+    let cargo = std::fs::read_to_string(r.join("Cargo.toml")).unwrap();
+    let crate_ver = cargo
+        .lines()
+        .find_map(|l| l.strip_prefix("version = \""))
+        .and_then(|s| s.strip_suffix("\""))
+        .expect("no version in Cargo.toml");
+    assert_eq!(pkg["version"], crate_ver, "keep in sync with Cargo.toml");
     assert_eq!(pkg["icon"], "icon.svg");
     let lang: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(r.join("editors/vscode/language-configuration.json")).unwrap(),
