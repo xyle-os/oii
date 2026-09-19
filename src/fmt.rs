@@ -17,6 +17,10 @@ pub fn format_doc(doc: &Doc) -> String {
         }
         out.push_str(&fmt_node(n, 0));
     }
+    // posix tail newline. empty doc stays empty.
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
     out
 }
 
@@ -52,7 +56,9 @@ pub fn fmt_value(v: &Value) -> String {
         Value::Str(s) => format!("\"{}\"", escape_str(s)),
         Value::RawStr(s) => {
             if s.contains("\"#") {
-                format!("\"{}\"", escape_str(s))
+                // quoted strings interpolate {var}. raw does not.
+                // spell { as \u{7B} so semantics survive.
+                format!("\"{}\"", escape_str(s).replace('{', "\\u{7B}"))
             } else {
                 format!("#\"{s}\"#")
             }

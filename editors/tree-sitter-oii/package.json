@@ -1,0 +1,8 @@
+{
+  "name": "tree-sitter-oii",
+  "version": "0.1.0",
+  "description": "tree-sitter grammar for OII",
+  "main": "bindings/node",
+  "keywords": ["parser"],
+  "dependencies": { "nan": "^2.0.0" }
+}

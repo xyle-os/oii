@@ -1,0 +1,84 @@
+%YAML 1.2
+---
+name: OII
+file_extensions: [oii]
+scope: source.oii
+
+contexts:
+  main:
+    - include: comments
+    - include: impt
+    - include: raw-string
+    - include: double-string
+    - include: numbers
+    - include: keywords
+    - include: attr
+    - include: punctuation
+  comments:
+    - match: ///.*$
+      scope: comment.line.documentation.oii
+    - match: //.*$
+      scope: comment.line.double-slash.oii
+    - match: /\*
+      scope: punctuation.definition.comment.oii
+      push: block-comment
+  block-comment:
+    - meta_scope: comment.block.oii
+    - match: \*/
+      scope: punctuation.definition.comment.oii
+      pop: true
+  impt:
+    - match: (?<!\w)impt(?!\w)
+      scope: keyword.control.import.oii
+  keywords:
+    - match: (?<!\w)(true|false)(?!\w)
+      scope: constant.language.boolean.oii
+    - match: (?<!\w)null(?!\w)
+      scope: constant.language.null.oii
+  raw-string:
+    - match: '#"'
+      scope: punctuation.definition.string.begin.oii
+      push: in-raw
+  in-raw:
+    - meta_scope: string.unquoted.raw.oii
+    - match: '"#'
+      scope: punctuation.definition.string.end.oii
+      pop: true
+  double-string:
+    - match: '"'
+      scope: punctuation.definition.string.begin.oii
+      push: in-string
+  in-string:
+    - meta_scope: string.quoted.double.oii
+    - match: '\\(n|r|t|0|\\|"|''|x[0-9A-Fa-f]{2}|u\{[0-9A-Fa-f]+\})'
+      scope: constant.character.escape.oii
+    - match: '\\.'
+      scope: invalid.illegal.escape.oii
+    - match: '\{[A-Za-z_][A-Za-z0-9_]*\}'
+      scope: variable.interpolation.oii
+    - match: '"'
+      scope: punctuation.definition.string.end.oii
+      pop: true
+  numbers:
+    - match: '(?<![\w.])([+-]?0[xX][0-9A-Fa-f_]+)'
+      scope: constant.numeric.hex.oii
+    - match: '(?<![\w.])([+-]?0[oO][0-7_]+)'
+      scope: constant.numeric.octal.oii
+    - match: '(?<![\w.])([+-]?0[bB][01_]+)'
+      scope: constant.numeric.binary.oii
+    - match: '(?<![\w.])([+-]?(\d[\d_]*\.\d[\d_]*([eE][+-]?\d[\d_]*)?|\d[\d_]*[eE][+-]?\d[\d_]*|\.\d[\d_]*([eE][+-]?\d[\d_]*)?|\d[\d_]*\.))'
+      scope: constant.numeric.float.oii
+    - match: '(?<![\w.])([+-]?\d[\d_]*)'
+      scope: constant.numeric.integer.oii
+  attr:
+    - match: '([A-Za-z_\x80-\xFFFF][\w.\-+]*)(\s*)(:|(=))'
+      captures:
+        1: entity.other.attribute-name.oii
+        3: punctuation.separator.key-value.oii
+  punctuation:
+    - match: '[\[\]]'
+      scope: punctuation.section.brackets.oii
+    - match: ','
+      scope: punctuation.separator.comma.oii
+    - match: '[{}]'
+      scope: invalid.illegal.brace.oii

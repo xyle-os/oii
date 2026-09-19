@@ -218,39 +218,29 @@ pub fn split(items: Vec<RawItem>, raw: &[(Kind, usize)], src: &str, lang: Lang) 
 
 fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> Diag {
     let sp = err.span();
-    let idx = sp.start.min(raw.len().saturating_sub(1));
-    let byte = raw.get(idx).map(|t| t.1).unwrap_or(src.len());
-    let end_byte = raw.get(sp.end).map(|t| t.1).unwrap_or(src.len());
     let found = err.found().cloned();
+    let at_end = sp.start >= raw.len();
+    let byte = raw.get(sp.start).map(|t| t.1).unwrap_or(src.len());
+    // span covers the offending token only. never backwards.
+    let end_byte = raw
+        .get(sp.start)
+        .map(|t| (t.1 + tok_width(&t.0)).min(src.len()))
+        .unwrap_or(src.len())
+        .max(byte.min(src.len()));
+    let end_byte = if end_byte <= byte {
+        (byte + 1).min(src.len().max(byte))
+    } else {
+        end_byte
+    };
     let found_desc = found
         .as_ref()
         .map(|k| k.describe(lang))
         .unwrap_or_else(|| tr(lang, "文件结尾", "end of input").to_string());
-    let mut expects: Vec<String> = err
-        .expected()
-        .map(|e| match e.as_ref() {
-            Some(k) => k.describe(lang),
-            None => tr(lang, "文件结尾", "end of input").to_string(),
-        })
-        .collect();
+    let expects = clean_expects(err, lang);
     let label = err.label().map(|s| s.to_string());
-    if let Some(l) = &label {
-        if !expects.iter().any(|e| e == l) {
-            expects.push(l.clone());
-        }
-    }
-    let expects = if expects.is_empty() {
-        tr(lang, "合法符号", "valid item").to_string()
-    } else {
-        expects.join(", ")
-    };
 
-    let (zh_msg, en_msg) = (
-        format!("要 {expects}, 却看到 {found_desc}. 语法错了"),
-        format!("want {expects}, got {found_desc}. bad syntax"),
-    );
-
-    let (zh_hint, en_hint) = hint_for(&found, &label, lang);
+    let (zh_msg, en_msg) = message_for(&found, at_end, missing_value(raw, sp.start), &expects, &found_desc);
+    let (zh_hint, en_hint) = hint_for(&found, at_end, missing_value(raw, sp.start), &label, lang);
 
     Diag::error_hint(
         lang,
@@ -263,11 +253,126 @@ fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> D
     )
 }
 
+// source width of one token. clamped, display only.
+fn tok_width(k: &Kind) -> usize {
+    match k {
+        Kind::Name(s) | Kind::Str(s) | Kind::RawStr(s) => s.len().clamp(1, 12) + 2,
+        Kind::Int(i) => i.to_string().len().max(1),
+        Kind::Float(f) => f.to_string().len().max(1),
+        Kind::Bool(true) => 4,
+        Kind::Bool(false) => 5,
+        Kind::Null => 4,
+        Kind::Impt => 4,
+        _ => 1,
+    }
+}
+
+// dedupe, drop noise, cap length. stable order.
+fn clean_expects(err: &TokErr, lang: Lang) -> String {
+    let mut seen: Vec<String> = Vec::new();
+    for e in err.expected() {
+        let s = match e.as_ref() {
+            Some(k) => k.describe(lang),
+            None => tr(lang, "文件结尾", "end of input").to_string(),
+        };
+        if !seen.contains(&s) {
+            seen.push(s);
+        }
+    }
+    if let Some(l) = err.label() {
+        let l = l.to_string();
+        if !seen.contains(&l) {
+            seen.push(l);
+        }
+    }
+    // top label repeats the item label. drop the dup.
+    let dup_top = tr(lang, "impt 或节点", "impt or node").to_string();
+    if seen.contains(&dup_top) && seen.iter().any(|s| s == "impt") {
+        seen.retain(|s| s != &dup_top);
+    }
+    if seen.is_empty() {
+        return tr(lang, "合法符号", "valid item").to_string();
+    }
+    const MAX: usize = 3;
+    if seen.len() > MAX {
+        let rest = seen.len() - MAX;
+        let head = seen[..MAX].join(", ");
+        return match lang {
+            Lang::Zh => format!("{head} 等(还有{rest}种)"),
+            Lang::En => format!("{head} (+{rest} more)"),
+        };
+    }
+    seen.join(", ")
+}
+
+// `x: ,` means empty value, not stray sep. peek next token.
+fn missing_value(raw: &[(Kind, usize)], at: usize) -> bool {
+    match raw.get(at + 1).map(|t| &t.0) {
+        None | Some(Kind::Comma) | Some(Kind::RBracket) => true,
+        _ => false,
+    }
+}
+
+// tailored message per case. generic shape last.
+fn message_for(
+    found: &Option<Kind>,
+    at_end: bool,
+    empty_value: bool,
+    expects: &str,
+    found_desc: &str,
+) -> (String, String) {
+    if at_end {
+        let zh = format!("文件提前结束了. 想要 {expects}");
+        let en = format!("unexpected end of input. want {expects}");
+        return (zh, en);
+    }
+    match found {
+        Some(Kind::Comma) => (
+            "逗号后面缺东西. 补个值或删掉逗号".to_string(),
+            "comma with nothing after it. add a value or drop it".to_string(),
+        ),
+        Some(Kind::Colon) | Some(Kind::Equals) if empty_value => (
+            "冒号后面缺值. 写成 key: value".to_string(),
+            "missing value after separator. write key: value".to_string(),
+        ),
+        Some(Kind::Colon) | Some(Kind::Equals) => (
+            "这里冒号(等号)多了. 属性写法是 key: value".to_string(),
+            "stray separator. attributes look like key: value".to_string(),
+        ),
+        _ => {
+            let zh = format!("要 {expects}, 却看到 {found_desc}. 语法错了");
+            let en = format!("want {expects}, got {found_desc}. bad syntax");
+            (zh, en)
+        }
+    }
+}
+
 fn hint_for(
     found: &Option<Kind>,
+    at_end: bool,
+    empty_value: bool,
     label: &Option<String>,
     lang: Lang,
 ) -> (Option<String>, Option<String>) {
+    if at_end {
+        return (
+            Some("检查缺失的 `]` 或 `,`. 可试 --fix 补括号".to_string()),
+            Some("check for a missing `]` or `,`. try --fix".to_string()),
+        );
+    }
+    if matches!(found, Some(Kind::Colon) | Some(Kind::Equals)) {
+        return if empty_value {
+            (
+                Some("删掉冒号或补上值. 如 x: 1".to_string()),
+                Some("drop the separator or add a value. e.g. x: 1".to_string()),
+            )
+        } else {
+            (
+                Some("属性写法是 key: value. 检查等号两边".to_string()),
+                Some("attributes look like key: value".to_string()),
+            )
+        };
+    }
     let (zh, en) = match found {
         Some(Kind::LBrace) | Some(Kind::RBrace) => (
             Some("花括号没用. 作用域只认方括号"),

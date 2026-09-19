@@ -1,0 +1,27 @@
+{
+  "Node with body": {
+    "prefix": "node",
+    "body": ["${1:name} [", "  ${2:key}: ${3:value},", "]"],
+    "description": "OII node"
+  },
+  "Attribute": {
+    "prefix": "attr",
+    "body": ["${1:key}: ${2:value},"],
+    "description": "OII attribute"
+  },
+  "Import": {
+    "prefix": "impt",
+    "body": ["impt \"${1:common.oii}\","],
+    "description": "OII import"
+  },
+  "Raw string": {
+    "prefix": "raw",
+    "body": ["#\"${1:raw}\"#"],
+    "description": "OII raw string"
+  },
+  "Array attribute": {
+    "prefix": "arr",
+    "body": ["${1:key}: [${2:1}, ${3:2}],"],
+    "description": "OII array attribute"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "oii",
+  "displayName": "OII",
+  "description": "OII config format. Brackets for scope.",
+  "version": "0.1.0",
+  "publisher": "celvra",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/xyle-os/oii",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "oii",
+        "aliases": ["OII", "oii"],
+        "extensions": [".oii"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "oii",
+        "scopeName": "source.oii",
+        "path": "./syntaxes/oii.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "oii",
+        "path": "./snippets/oii.json"
+      }
+    ]
+  }
+}

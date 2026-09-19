@@ -1,0 +1,15 @@
+# add to ~/.config/helix/languages.toml
+[[language]]
+name = "oii"
+scope = "source.oii"
+file-types = ["oii"]
+comment-tokens = ["//"]
+block-comment-tokens = [{ start = "/*", end = "*/" }]
+indent = { tab-width = 2, unit = "  " }
+injection-regex = "^oii$"
+language-servers = ["oii-lsp"]
+
+[[language-server]]
+name = "oii-lsp"
+command = "oii"
+args = ["lsp"]

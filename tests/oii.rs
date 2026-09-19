@@ -13,6 +13,7 @@ fn opts(vars: &[(&str, &str)]) -> ParseOptions {
         vars: map,
         lang: Lang::Zh,
         fix: false,
+        keep_interp: false,
     }
 }
 
@@ -243,7 +244,8 @@ fn i18n_zh_en() {
         .iter()
         .find(|d| d.level == oii::diag::Level::Error)
         .unwrap();
-    assert!(zh.message.contains("期望") || zh.message.contains("语法"));
+    assert!(zh.message.contains("缺值"));
+    assert!(zh.hint.as_deref().unwrap_or("").contains("x: 1"));
 
     let e = parse_with(
         src,
@@ -258,6 +260,35 @@ fn i18n_zh_en() {
         .find(|d| d.level == oii::diag::Level::Error)
         .unwrap();
     assert_ne!(zh.message, en.message);
+    assert!(en.message.contains("value"));
+}
+
+#[test]
+fn eof_missing_bracket_points_at_end() {
+    let e = parse("foo [ a: 1").unwrap_err();
+    let d = e.iter().find(|d| d.code == "E001").unwrap();
+    assert!(d.message.contains("结束") || d.message.contains("end"));
+    assert!(d.hint.as_deref().unwrap_or("").contains("--fix"));
+    assert_eq!(d.loc.line, 1);
+}
+
+#[test]
+fn render_covers_cjk_and_tabs() {
+    use oii::diag::{render_diag, Loc, Diag, Lang, Level};
+    let src = "a [\n\t键: 中文\n]";
+    let d = Diag {
+        level: Level::Error,
+        level_word: "error",
+        code: "E000",
+        message: "x".into(),
+        hint: Some("h".into()),
+        loc: Loc { line: 2, col: 4, end_line: 2, end_col: 6 },
+    };
+    let _ = Lang::En;
+    let _ = Level::Warning;
+    let s = render_diag(src, &d);
+    assert!(s.contains("2:4"));
+    assert!(s.contains('^'));
 }
 
 #[test]
@@ -283,7 +314,7 @@ fn fmt_unifies_colon_and_two_space_indent() {
     let f = oii::format_doc(&doc);
     assert_eq!(
         f,
-        "Foo [\n  a: 1,\n  b: 2,\n  child [\n    x: \"y\",\n    child2: [],\n  ]\n]"
+        "Foo [\n  a: 1,\n  b: 2,\n  child [\n    x: \"y\",\n    child2: [],\n  ]\n]\n"
     );
 }
 
@@ -301,7 +332,7 @@ fn fmt_roundtrip_idempotent() {
 fn fmt_of_empty_simple() {
     let doc = ok("foo []\nbar [ ]\n");
     let f = oii::format_doc(&doc);
-    assert_eq!(f, "foo []\nbar []");
+    assert_eq!(f, "foo []\nbar []\n");
     assert_eq!(parse(&f).unwrap(), doc);
 }
 
@@ -411,4 +442,91 @@ fn deserialize_into_user_struct() {
     assert_eq!(cfg.server.port, 8080);
     assert_eq!(cfg.server.name.as_deref(), Some("web"));
     assert_eq!(cfg.server.timers, None);
+}
+
+#[test]
+fn fmt_keeps_interp_template() {
+    use oii::diag::Lang;
+    let opts = oii::ParseOptions {
+        vars: HashMap::new(),
+        lang: Lang::Zh,
+        fix: false,
+        keep_interp: true,
+    };
+    let out = oii::parse_with("msg [ text: \"hi {name}!\" ]", &opts);
+    assert!(out.warnings().is_empty());
+    let doc = out.doc.unwrap();
+    let f = oii::format_doc(&doc);
+    assert!(f.contains("{name}"), "fmt ate interp: {f}");
+    // reparse keeps template too
+    let out2 = oii::parse_with(&f, &opts);
+    let n = &out2.doc.unwrap().nodes[0];
+    assert_eq!(
+        *n.get("text").unwrap(),
+        Value::Str("hi {name}!".to_string())
+    );
+}
+
+#[test]
+fn fmt_raw_with_close_delim_survives() {
+    // lexer can never emit this (first "# always closes).
+    // build by hand to cover the fallback path.
+    let doc = Doc {
+        imports: vec![],
+        nodes: vec![Node {
+            name: "m".into(),
+            args: vec![],
+            attributes: vec![oii::ast::Attribute {
+                key: "r".into(),
+                value: Value::RawStr("a\"#b {v}".into()),
+            }],
+            children: vec![],
+        }],
+    };
+    let f = oii::format_doc(&doc);
+    // quoted fallback parses as Str, not RawStr. content must match.
+    let back = parse(&f).unwrap();
+    assert_eq!(
+        back.nodes[0].get("r").and_then(Value::as_str),
+        doc.nodes[0].get("r").and_then(Value::as_str)
+    );
+}
+
+#[test]
+fn fmt_ends_with_newline() {
+    let doc = ok("foo []");
+    assert!(oii::format_doc(&doc).ends_with('\n'));
+}
+
+#[test]
+fn number_fallback_stays_bare() {
+    // bad numbers must not half-eat input. whole token is bare.
+    let doc = ok("a [ v1: 1e, v2: 123abc, v3: 1.foo, v4: 127.0.0.1 ]");
+    let n = &doc.nodes[0];
+    assert_eq!(*attr(n, "v1"), Value::Bare("1e".into()));
+    assert_eq!(*attr(n, "v2"), Value::Bare("123abc".into()));
+    assert_eq!(*attr(n, "v3"), Value::Bare("1.foo".into()));
+    assert_eq!(*attr(n, "v4"), Value::Bare("127.0.0.1".into()));
+    let doc = ok("a [ v: 1.e3 ]");
+    assert_eq!(*attr(&doc.nodes[0], "v"), Value::Float(1000.0));
+}
+
+#[test]
+fn dup_key_warns_but_keeps_last() {
+    let out = parse_with("a [ x: 1, x: 2 ]", &opts(&[]));
+    let doc = out.doc.expect("dup must still parse");
+    assert_eq!(doc.nodes[0].attributes.len(), 2); // both kept, fold is last wins
+    assert!(out.diagnostics.iter().any(|d| d.code == "W002"));
+    // json folds last wins
+    assert_eq!(oii::to_json(&doc)["nodes"][0]["attributes"]["x"], 2);
+}
+
+#[test]
+fn bare_node_swallow_warns() {
+    let out = parse_with("foo\nbar []", &opts(&[]));
+    assert!(out.doc.is_some());
+    assert!(out.diagnostics.iter().any(|d| d.code == "W003"));
+    // same line args stay quiet
+    let out = parse_with("foo bar []", &opts(&[]));
+    assert!(!out.diagnostics.iter().any(|d| d.code == "W003"));
 }

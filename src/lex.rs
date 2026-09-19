@@ -69,6 +69,7 @@ struct Lexer<'a> {
     src: &'a str,
     vars: &'a HashMap<String, String>,
     lang: Lang,
+    keep_interp: bool,
     chars: Vec<char>,
     pos: usize,
     byte: usize,
@@ -80,6 +81,7 @@ impl<'a> Lexer<'a> {
             src,
             vars,
             lang,
+            keep_interp: false,
             chars: src.chars().collect(),
             pos: 0,
             byte: 0,
@@ -130,7 +132,17 @@ impl<'a> Lexer<'a> {
 }
 
 pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
+    lex_with(src, vars, lang, false)
+}
+
+pub fn lex_with(
+    src: &str,
+    vars: &HashMap<String, String>,
+    lang: Lang,
+    keep_interp: bool,
+) -> LexOut {
     let mut lx = Lexer::new(src, vars, lang);
+    lx.keep_interp = keep_interp;
     let mut tokens = Vec::new();
     let mut diags = Vec::new();
 
@@ -241,8 +253,7 @@ pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
                         "bad `#`. raw string is #\" to \"#",
                         start,
                         lx.byte,
-                    ));
-                }
+                    ));                }
             }
             '0'..='9' | '.' => {
                 if !scan_number(&mut lx, &mut tokens, &mut diags) {
@@ -265,8 +276,15 @@ pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
                     scan_word(&mut lx, &mut tokens);
                 } else {
                     let start = lx.byte;
+                    let bad = lx.peek().unwrap_or('?');
                     lx.bump();
-                    diags.push(lx.err("E011", "非法字符", "bad char", start, lx.byte));
+                    diags.push(lx.err(
+                        "E011",
+                        format!("非法字符 `{bad}`").as_str(),
+                        format!("bad char `{bad}`").as_str(),
+                        start,
+                        lx.byte,
+                    ));
                 }
             }
             c if c.is_alphabetic() || c == '_' => {
@@ -285,12 +303,13 @@ pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
             }
         }
         if lx.pos == before && lx.pos < lx.chars.len() {
+            let bad = lx.peek().unwrap_or('?');
             lx.bump();
             diags.push(lx.err(
                 "E011",
-                "非法字符",
-                "bad char",
-                lx.byte.saturating_sub(1),
+                format!("非法字符 `{bad}`").as_str(),
+                format!("bad char `{bad}`").as_str(),
+                lx.byte.saturating_sub(bad.len_utf8()),
                 lx.byte,
             ));
         }
@@ -378,6 +397,9 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
     }
 
     if bare.is_empty() {
+        // not a number. rewind so caller rescans as word.
+        lx.byte = start;
+        lx.pos = start_pos;
         return false;
     }
 
@@ -411,6 +433,9 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
             is_float = true;
             lx.bump();
         } else {
+            // e.g. version 1.foo. leave whole thing as bare.
+            lx.byte = start;
+            lx.pos = start_pos;
             return false;
         }
     }
@@ -432,25 +457,26 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
             }
         }
         if !has || !underscores_ok(&exp) {
-            return false;
-        }
-    }
-    if radix != 10 && lx.peek() == Some('.') {
-        return false;
-    }
-
-    let after_byte = lx.byte;
-    let after_pos = lx.pos;
-    if let Some(c) = lx.peek() {
-        if !is_delim(c) {
-            let _ = c;
+            // bad exp like 1e. rewind, let word scan own it.
             lx.byte = start;
             lx.pos = start_pos;
             return false;
         }
     }
-    let _ = after_byte;
-    let _ = after_pos;
+    if radix != 10 && lx.peek() == Some('.') {
+        lx.byte = start;
+        lx.pos = start_pos;
+        return false;
+    }
+
+    // trailing garbage like 123abc is a bare word, not a number.
+    if let Some(c) = lx.peek() {
+        if !is_delim(c) {
+            lx.byte = start;
+            lx.pos = start_pos;
+            return false;
+        }
+    }
 
     if !is_float {
         let val = if radix == 10 {
@@ -577,10 +603,10 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                 diags.push(Diag::error_hint(
                     lx.lang,
                     "E003",
-                    "引号字符串不能换行",
-                    "quoted string cannot span lines",
-                    Some("跨行用 #\"...\"#"),
-                    Some("multiline uses #\"...\"#"),
+                    "字符串没闭合就换行了. 单行字符串不能跨行",
+                    "string hits newline before closing quote",
+                    Some("结尾加引号. 跨行用 #\"...\"#"),
+                    Some("close with quote. multiline uses #\"...\"#"),
                     loc_of(lx.src, start, lx.byte),
                 ));
                 break;
@@ -679,15 +705,12 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                         }
                     }
                     other => {
+                        let got = other.map(|x| x.to_string()).unwrap_or_default();
                         diags.push(Diag::error(
                             lx.lang,
                             "E004",
-                            format!(
-                                "转义坏了 `\\{c}`",
-                                c = other.map(|x| x.to_string()).unwrap_or_else(|| "".into())
-                            )
-                            .as_str(),
-                            "bad escape",
+                            format!("转义 `\\{got}` 不存在. 可用的是 n r t 0 \\ \" xNN u{{...}}").as_str(),
+                            format!("unknown escape `\\{got}`. want n r t 0 \\ \" xNN u{{...}}").as_str(),
                             loc_of(lx.src, esc_start, lx.byte + 1),
                         ));
                         if let Some(_c) = lx.peek() {
@@ -720,6 +743,11 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                             Some("e.g. \"hi {name}\""),
                             loc_of(lx.src, interp_start, lx.byte),
                         ));
+                    } else if lx.keep_interp {
+                        // fmt path. leave template alone.
+                        buf.push('{');
+                        buf.push_str(&name);
+                        buf.push('}');
                     } else if let Some(v) = lx.vars.get(&name) {
                         buf.push_str(v);
                     } else {
@@ -727,7 +755,7 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                             lx.lang,
                             "W001",
                             format!("变量 `{name}` 没定义. 置空了", name = name).as_str(),
-                            "undefined var. left empty",
+                            format!("undefined var `{name}`. left empty", name = name).as_str(),
                             Some("用 --var 名字=值 传进来"),
                             Some("pass --var name=value"),
                             loc_of(lx.src, interp_start, lx.byte),

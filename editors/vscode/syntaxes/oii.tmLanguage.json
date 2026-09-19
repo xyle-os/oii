@@ -1,0 +1,177 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage-schema/master/tmlanguage.json",
+  "name": "OII",
+  "scopeName": "source.oii",
+  "fileTypes": ["oii"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#impt" },
+    { "include": "#raw-string" },
+    { "include": "#double-string" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#attr" },
+    { "include": "#punctuation" },
+    { "include": "#bare" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.oii",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.oii",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.oii",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "impt": {
+      "patterns": [
+        {
+          "name": "keyword.control.import.oii",
+          "match": "(?<!\\w)impt(?!\\w)"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.oii",
+          "match": "(?<!\\w)(true|false)(?!\\w)"
+        },
+        {
+          "name": "constant.language.null.oii",
+          "match": "(?<!\\w)null(?!\\w)"
+        }
+      ]
+    },
+    "raw-string": {
+      "patterns": [
+        {
+          "name": "string.unquoted.raw.oii",
+          "begin": "#\"",
+          "end": "\"#",
+          "patterns": [
+            {
+              "name": "punctuation.definition.string.oii",
+              "match": "#\"|\"#"
+            }
+          ]
+        }
+      ]
+    },
+    "double-string": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.oii",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.oii",
+              "match": "\\\\(n|r|t|0|\\\\|\"|'|x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]+\\})"
+            },
+            {
+              "name": "invalid.illegal.escape.oii",
+              "match": "\\\\."
+            },
+            {
+              "name": "variable.interpolation.oii",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                {
+                  "name": "variable.other.oii",
+                  "match": "[A-Za-z_][A-Za-z0-9_]*"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.oii",
+          "match": "(?<![\\w.])([+-]?0[xX][0-9A-Fa-f_]+)"
+        },
+        {
+          "name": "constant.numeric.octal.oii",
+          "match": "(?<![\\w.])([+-]?0[oO][0-7_]+)"
+        },
+        {
+          "name": "constant.numeric.binary.oii",
+          "match": "(?<![\\w.])([+-]?0[bB][01_]+)"
+        },
+        {
+          "name": "constant.numeric.float.oii",
+          "match": "(?<![\\w.])([+-]?(\\d[\\d_]*\\.\\d[\\d_]*(?:[eE][+-]?\\d[\\d_]*)?|\\d[\\d_]*[eE][+-]?\\d[\\d_]*|\\.\\d[\\d_]*(?:[eE][+-]?\\d[\\d_]*)?|\\d[\\d_]*\\.(?!\\.)))"
+        },
+        {
+          "name": "constant.numeric.integer.oii",
+          "match": "(?<![\\w.])([+-]?\\d[\\d_]*)"
+        },
+        {
+          "name": "invalid.illegal.number.oii",
+          "match": "\\d[\\w.]*_\\b|\\b\\d\\w+"
+        }
+      ]
+    },
+    "attr": {
+      "patterns": [
+        {
+          "name": "meta.attribute.oii",
+          "match": "([A-Za-z_\\u0080-\\uFFFF][\\w.\\-\\+]*)(\\s*)(:|\\=)",
+          "captures": {
+            "1": { "name": "entity.other.attribute-name.oii" },
+            "3": { "name": "punctuation.separator.key-value.oii" }
+          }
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.brackets.oii",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.comma.oii",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.key-value.oii",
+          "match": "[:=]"
+        },
+        {
+          "name": "invalid.illegal.brace.oii",
+          "match": "[{}]"
+        },
+        {
+          "name": "invalid.illegal.slash.oii",
+          "match": "(?<!/)/(?!/|\\*)"
+        },
+        {
+          "name": "invalid.illegal.hash.oii",
+          "match": "#(?!\")"
+        }
+      ]
+    },
+    "bare": {
+      "patterns": [
+        {
+          "name": "string.unquoted.bare.oii",
+          "match": "[A-Za-z_\\u0080-\\uFFFF][\\w.\\-\\+]*"
+        }
+      ]
+    }
+  }
+}

@@ -4,6 +4,8 @@ pub mod fix;
 pub mod fmt;
 pub mod grammar;
 pub mod lex;
+pub mod lint;
+pub mod lsp;
 
 use std::collections::HashMap;
 
@@ -13,7 +15,7 @@ pub use fmt::format_doc;
 
 pub mod prelude {
     pub use crate::ast::{Attribute, Doc, Node, Value};
-    pub use crate::diag::{Diag, Lang, Level, render_diag};
+    pub use crate::diag::{Diag, Lang, Level, render_diag, render_diag_with_file};
     pub use crate::{
         ParseOptions, ParseOutput, doc_to_object, format_doc, parse, parse_with, to_json,
         to_json_string,
@@ -24,6 +26,8 @@ pub struct ParseOptions {
     pub vars: HashMap<String, String>,
     pub lang: Lang,
     pub fix: bool,
+    // keep {var} as-is. fmt uses this.
+    pub keep_interp: bool,
 }
 
 impl Default for ParseOptions {
@@ -32,6 +36,7 @@ impl Default for ParseOptions {
             vars: HashMap::new(),
             lang: Lang::Zh,
             fix: false,
+            keep_interp: false,
         }
     }
 }
@@ -77,7 +82,7 @@ pub fn parse_with(src: &str, opts: &ParseOptions) -> ParseOutput {
     };
     diagnostics.extend(fix_diags);
 
-    let lexed = lex::lex(&work_src, &opts.vars, lang);
+    let lexed = lex::lex_with(&work_src, &opts.vars, lang, opts.keep_interp);
     let lex_err = lexed.diags.iter().any(|d| d.level == Level::Error);
     diagnostics.extend(lexed.diags);
 
@@ -103,6 +108,8 @@ pub fn parse_with(src: &str, opts: &ParseOptions) -> ParseOutput {
                         imports: parts.imports,
                         nodes: parts.nodes,
                     });
+                    // warnings only. never fail a clean parse.
+                    diagnostics.extend(lint::check(&lexed.tokens, &work_src, lang));
                 }
             }
             Err(d) => diagnostics.push(d),

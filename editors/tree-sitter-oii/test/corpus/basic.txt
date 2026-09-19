@@ -1,0 +1,54 @@
+=====================
+Basic doc
+=====================
+
+--- input ---
+impt "common.oii", "ui.oii"
+server [
+  host: 127.0.0.1
+  port: 4377
+  welcome: "hi {name}"
+  icon: #"raw \n kept"#
+  ports: [4377, 4378]
+  plugin [ name: "chat" ]
+]
+
+--- output ---
+(doc
+  (impt
+    (string)
+    (string))
+  (node
+    name: (name)
+    body: (body
+      (attr
+        key: (name)
+        value: (value
+          (bare)))
+      (attr
+        key: (name)
+        value: (value
+          (int)))
+      (attr
+        key: (name)
+        value: (value
+          (string)))
+      (attr
+        key: (name)
+        value: (value
+          (raw_string)))
+      (attr
+        key: (name)
+        value: (value
+          (array
+            (value
+              (int))
+            (value
+              (int)))))
+      (node
+        name: (name)
+        body: (body
+          (attr
+            key: (name)
+            value: (value
+              (string))))))))

@@ -50,6 +50,9 @@ CLI:
 oii parse <file|->     dump AST, --json dumps JSON instead
 oii to-json <file|->   dump JSON
 oii fmt [file|-]       print formatted source, --check exits 1 on diff, -w writes back
+oii check <file|->     diags only, exit 1 on error, --deny-warnings also fails on warnings
+oii completion <shell> print shell completion script (bash zsh fish powershell elvish)
+oii lsp                language server on stdio (diagnostics, formatting, completion, hover)
 
 --fix --write          append missing ] at EOF, optionally write back
 --var name=value       repeatable, for interpolation
@@ -119,5 +122,6 @@ Things that bite:
 Notes:
 
 Handwritten lexer, chumsky grammar. Depends on serde, serde_json, clap. `cargo test` runs the suite.
+Syntax highlighting lives in `editors/`: VSCode (`vscode/`), Sublime, Vim, Emacs, Nano, Helix (with `oii lsp` wiring), plus `tree-sitter-oii/`.
 
 License: Apache-2.0. Copyright 2026 Celvra.

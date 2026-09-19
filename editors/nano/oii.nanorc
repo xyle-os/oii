@@ -1,0 +1,27 @@
+syntax "oii" "OII"
+header "\\.oii$"
+
+# comments
+color brightblack "//.*$"
+color brightblack "/\\*"
+color brightblack "\\*/"
+
+# impt first
+color brightblue "\\bimpt\\b"
+
+# bools, null
+color brightcyan "\\b(true|false|null)\\b"
+
+# raw and cooked strings
+color yellow "#\".*?\"#"
+color yellow "\".*\""
+
+# numbers
+color magenta "\\b[+-]?0[xX][0-9A-Fa-f_]+\\b"
+color magenta "\\b[+-]?0[oO][0-7_]+\\b"
+color magenta "\\b[+-]?0[bB][01_]+\\b"
+color magenta "\\b[+-]?([0-9][0-9_]*\\.[0-9]*|[0-9]*\\.[0-9][0-9_]*)([eE][+-]?[0-9]+)?\\b"
+color magenta "\\b[+-]?[0-9][0-9_]*\\b"
+
+# braces do nothing, flag them
+color red "[{}]"
