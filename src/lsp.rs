@@ -23,7 +23,8 @@ pub fn run() -> Result<(), Box<dyn Error + Sync + Send>> {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         ..Default::default()
     };
-    let init: InitializeParams = serde_json::from_value(conn.initialize(serde_json::to_value(caps)?)?)?;
+    let init: InitializeParams =
+        serde_json::from_value(conn.initialize(serde_json::to_value(caps)?)?)?;
     let lang = init
         .initialization_options
         .as_ref()
@@ -61,12 +62,18 @@ fn on_request(docs: &mut HashMap<String, String>, req: Request, lang: Lang) -> O
             let p: DocumentFormattingParams = serde_json::from_value(req.params).ok()?;
             let text = docs.get(p.text_document.uri.as_str())?;
             let edits = format_edits(text, lang);
-            Some(Response::new_ok(req.id, serde_json::to_value(edits).unwrap_or_default()))
+            Some(Response::new_ok(
+                req.id,
+                serde_json::to_value(edits).unwrap_or_default(),
+            ))
         }
         "textDocument/completion" => {
             let _p: CompletionParams = serde_json::from_value(req.params).ok()?;
             let r = CompletionResponse::Array(complete_items());
-            Some(Response::new_ok(req.id, serde_json::to_value(r).unwrap_or_default()))
+            Some(Response::new_ok(
+                req.id,
+                serde_json::to_value(r).unwrap_or_default(),
+            ))
         }
         "textDocument/hover" => {
             let p: HoverParams = serde_json::from_value(req.params).ok()?;
@@ -77,7 +84,10 @@ fn on_request(docs: &mut HashMap<String, String>, req: Request, lang: Lang) -> O
                 contents: HoverContents::Scalar(MarkedString::String(md)),
                 range: None,
             };
-            Some(Response::new_ok(req.id, serde_json::to_value(h).unwrap_or_default()))
+            Some(Response::new_ok(
+                req.id,
+                serde_json::to_value(h).unwrap_or_default(),
+            ))
         }
         _ => None,
     }
@@ -93,7 +103,11 @@ fn on_note(
             let p: DidOpenTextDocumentParams = serde_json::from_value(note.params)?;
             let key = p.text_document.uri.as_str().to_string();
             docs.insert(key.clone(), p.text_document.text.clone());
-            Ok(Some(diag_msg(&p.text_document.uri, &p.text_document.text, lang)))
+            Ok(Some(diag_msg(
+                &p.text_document.uri,
+                &p.text_document.text,
+                lang,
+            )))
         }
         "textDocument/didChange" => {
             let p: DidChangeTextDocumentParams = serde_json::from_value(note.params)?;
@@ -203,7 +217,12 @@ fn complete_items() -> Vec<CompletionItem> {
             ..Default::default()
         });
     };
-    add("impt", CompletionItemKind::KEYWORD, "imports go first", Some("impt \"$0\","));
+    add(
+        "impt",
+        CompletionItemKind::KEYWORD,
+        "imports go first",
+        Some("impt \"$0\","),
+    );
     add("true", CompletionItemKind::VALUE, "bool", None);
     add("false", CompletionItemKind::VALUE, "bool", None);
     add("null", CompletionItemKind::VALUE, "null", None);

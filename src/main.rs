@@ -333,6 +333,8 @@ fn run(cli: Cli) -> Result<u8, String> {
             clap_complete::generate(shell, &mut cmd, "oii", &mut std::io::stdout());
             Ok(0)
         }
-        Cmd::Lsp => oii::lsp::run().map(|_| 0).map_err(|e| format!("lsp died: {e}")),
+        Cmd::Lsp => oii::lsp::run()
+            .map(|_| 0)
+            .map_err(|e| format!("lsp died: {e}")),
     }
 }

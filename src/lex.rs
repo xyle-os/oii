@@ -253,7 +253,8 @@ pub fn lex_with(
                         "bad `#`. raw string is #\" to \"#",
                         start,
                         lx.byte,
-                    ));                }
+                    ));
+                }
             }
             '0'..='9' | '.' => {
                 if !scan_number(&mut lx, &mut tokens, &mut diags) {
@@ -709,8 +710,10 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                         diags.push(Diag::error(
                             lx.lang,
                             "E004",
-                            format!("转义 `\\{got}` 不存在. 可用的是 n r t 0 \\ \" xNN u{{...}}").as_str(),
-                            format!("unknown escape `\\{got}`. want n r t 0 \\ \" xNN u{{...}}").as_str(),
+                            format!("转义 `\\{got}` 不存在. 可用的是 n r t 0 \\ \" xNN u{{...}}")
+                                .as_str(),
+                            format!("unknown escape `\\{got}`. want n r t 0 \\ \" xNN u{{...}}")
+                                .as_str(),
                             loc_of(lx.src, esc_start, lx.byte + 1),
                         ));
                         if let Some(_c) = lx.peek() {

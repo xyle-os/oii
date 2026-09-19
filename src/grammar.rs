@@ -239,7 +239,13 @@ fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> D
     let expects = clean_expects(err, lang);
     let label = err.label().map(|s| s.to_string());
 
-    let (zh_msg, en_msg) = message_for(&found, at_end, missing_value(raw, sp.start), &expects, &found_desc);
+    let (zh_msg, en_msg) = message_for(
+        &found,
+        at_end,
+        missing_value(raw, sp.start),
+        &expects,
+        &found_desc,
+    );
     let (zh_hint, en_hint) = hint_for(&found, at_end, missing_value(raw, sp.start), &label, lang);
 
     Diag::error_hint(

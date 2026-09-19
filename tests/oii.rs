@@ -274,7 +274,7 @@ fn eof_missing_bracket_points_at_end() {
 
 #[test]
 fn render_covers_cjk_and_tabs() {
-    use oii::diag::{render_diag, Loc, Diag, Lang, Level};
+    use oii::diag::{Diag, Lang, Level, Loc, render_diag};
     let src = "a [\n\t键: 中文\n]";
     let d = Diag {
         level: Level::Error,
@@ -282,7 +282,12 @@ fn render_covers_cjk_and_tabs() {
         code: "E000",
         message: "x".into(),
         hint: Some("h".into()),
-        loc: Loc { line: 2, col: 4, end_line: 2, end_col: 6 },
+        loc: Loc {
+            line: 2,
+            col: 4,
+            end_line: 2,
+            end_col: 6,
+        },
     };
     let _ = Lang::En;
     let _ = Level::Warning;

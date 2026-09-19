@@ -199,7 +199,11 @@ pub fn render_diag_with_file(src: &str, file: Option<&str>, d: &Diag) -> String 
     let total = src.lines().count().max(1) as u32;
     let over = d.loc.line > total;
     let line_no = d.loc.line.min(total);
-    let last_len = src.lines().nth(line_no.saturating_sub(1) as usize).map(|l| l.chars().count() as u32).unwrap_or(0);
+    let last_len = src
+        .lines()
+        .nth(line_no.saturating_sub(1) as usize)
+        .map(|l| l.chars().count() as u32)
+        .unwrap_or(0);
     let (col, end_col, end_line) = if over {
         (last_len + 1, last_len + 1, line_no)
     } else {
@@ -224,10 +228,17 @@ pub fn render_diag_with_file(src: &str, file: Option<&str>, d: &Diag) -> String 
             code: d.code,
             message: String::new(),
             hint: None,
-            loc: Loc { line: line_no, col, end_line, end_col },
+            loc: Loc {
+                line: line_no,
+                col,
+                end_line,
+                end_col,
+            },
         };
         let (lead, len) = caret_span(line_text, &tmp);
-        out.push_str(&format!("   {line_no} | {shown}\n   {line_no} | {lead}{len}\n"));
+        out.push_str(&format!(
+            "   {line_no} | {shown}\n   {line_no} | {lead}{len}\n"
+        ));
     }
     if let Some(h) = &d.hint {
         // tag stays english. grep-friendly.
@@ -263,7 +274,11 @@ fn display_col(line: &str, col: u32) -> usize {
         if cur >= col {
             break;
         }
-        disp += if ch == '\t' { 4 - disp % 4 } else { char_width(ch) };
+        disp += if ch == '\t' {
+            4 - disp % 4
+        } else {
+            char_width(ch)
+        };
         cur += 1;
     }
     disp
@@ -282,7 +297,11 @@ fn caret_span(line: &str, d: &Diag) -> (String, String) {
         let to = (end_col.saturating_sub(1) as usize).min(chars.len());
         for (idx, ch) in chars.iter().enumerate() {
             if idx >= from && idx < to {
-                len += if *ch == '\t' { 1 } else { char_width(*ch).max(1) };
+                len += if *ch == '\t' {
+                    1
+                } else {
+                    char_width(*ch).max(1)
+                };
             }
         }
         // span ran past eol (eof case). flag one cell.

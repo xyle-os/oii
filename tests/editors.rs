@@ -42,10 +42,7 @@ fn vscode_files_parse() {
     )
     .unwrap();
     for f in ["icon.svg", "README.md", "CHANGELOG.md", ".vscodeignore"] {
-        assert!(
-            r.join("editors/vscode").join(f).exists(),
-            "vscode/{f} gone"
-        );
+        assert!(r.join("editors/vscode").join(f).exists(), "vscode/{f} gone");
     }
     let svg = std::fs::read_to_string(r.join("editors/vscode/icon.svg")).unwrap();
     assert!(svg.contains("<svg") && svg.contains("</svg>"));
@@ -53,16 +50,16 @@ fn vscode_files_parse() {
 
 #[test]
 fn tree_sitter_grammar_sane() {
-    let g = std::fs::read_to_string(
-        root().join("editors/tree-sitter-oii/grammar.js"),
-    )
-    .unwrap();
+    let g = std::fs::read_to_string(root().join("editors/tree-sitter-oii/grammar.js")).unwrap();
     // doc first. tree-sitter starts at the first rule.
     let doc_at = g.find("    doc:").expect("doc rule gone");
     let impt_at = g.find("    impt:").expect("impt rule gone");
     assert!(doc_at < impt_at, "doc must come before impt");
     // tree-sitter regex has no look-around and no open {n,} repeat.
-    assert!(!g.contains("(?!") && !g.contains("(?<"), "look-around banned");
+    assert!(
+        !g.contains("(?!") && !g.contains("(?<"),
+        "look-around banned"
+    );
     for q in ["highlights.scm", "folds.scm", "indents.scm"] {
         assert!(
             root()
