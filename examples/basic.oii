@@ -1,0 +1,24 @@
+// OII example. Game config.
+// Scope is brackets. Indent does not matter.
+
+// impt goes first. Comma separated.
+impt "common.oii", "ui.theme.oii"
+
+// Top node takes args, then attrs and child nodes in brackets.
+server [
+    host: 127.0.0.1          // bare. no spaces.
+    port: 4377               // hex 0xFF oct 0o17 bin 0b1010 underscore 1_000_000
+    max_players: 32,
+    price: 19.99,
+    ratio: 1.5e-3,
+    sandbox: false,
+    welcome: "hello, {player_name}!"   // {var} works only in double quotes
+    icon: #"raw string, multiline ok, \n stays as is"#,
+    nothing: null
+    ports: [4377, 4378, 80]          // array. space or comma. trailing comma ok.
+    sub 中文名字也可以 [ x: 1 ]
+    plugin [
+        name: "chat"
+        enabled = true                // = is same as :
+    ]
+]
