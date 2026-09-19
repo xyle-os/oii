@@ -5,6 +5,7 @@ edition = "2024"
 description = "OII config format. Brackets for scope. Parser and formatter"
 authors = ["Celvra"]
 license = "Apache-2.0"
+repository = "https://github.com/xyle-os/oii"
 
 [dependencies]
 chumsky = "0.9.3"
