@@ -1,6 +1,6 @@
 # OII for VS Code
 
-`.oii` highlighting, brackets, comments, snippets.
+OII is the config language for Xyle, a package manager in development. `.oii` highlighting, brackets, comments, snippets.
 
 ```oii
 impt "common.oii"

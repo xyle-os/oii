@@ -2,7 +2,7 @@
 name = "oii"
 version = "0.1.1"
 edition = "2024"
-description = "OII config format. Brackets for scope. Parser and formatter"
+description = "Config language for Xyle. Brackets for scope. Parser and formatter"
 authors = ["Celvra"]
 license = "Apache-2.0"
 repository = "https://github.com/xyle-os/oii"

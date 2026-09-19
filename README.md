@@ -1,8 +1,10 @@
 # OII
 
-Object2. Files end with .oii.
+Config language for Xyle, a package manager in development. Files end with .oii.
 
 Brackets define scope. That is the whole format.
+
+Compared to the Nix language, OII is easier to start with. No functions, no laziness, no `let`. Names, values, brackets.
 
 ```oii
 impt "common.oii", "ui.oii"

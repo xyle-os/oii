@@ -11,8 +11,8 @@ use oii::{ParseOptions, parse_with};
 #[command(
     name = "oii",
     version,
-    about = "OII config format. Suffix .oii",
-    long_about = "OII config format. Suffix .oii\n\nOne rule: braces do nothing, scopes are brackets.\nComments // /// /* */. impt goes first. Nodes are name [ attrs plus child nodes ].\nValues are strings #\"...\"# ints 0xFF floats 1e3 bools null arrays. Double quotes do {var} interpolation."
+    about = "Config language for Xyle. Suffix .oii",
+    long_about = "Config language for Xyle, a package manager in development. Suffix .oii\n\nOne rule: braces do nothing, scopes are brackets.\nComments // /// /* */. impt goes first. Nodes are name [ attrs plus child nodes ].\nValues are strings #\"...\"# ints 0xFF floats 1e3 bools null arrays. Double quotes do {var} interpolation."
 )]
 struct Cli {
     #[command(subcommand)]
