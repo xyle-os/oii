@@ -30,6 +30,8 @@ fn vscode_files_parse() {
     )
     .unwrap();
     assert_eq!(pkg["contributes"]["languages"][0]["id"], "oii");
+    assert_eq!(pkg["version"], "0.1.0", "keep in sync with Cargo.toml");
+    assert_eq!(pkg["icon"], "icon.svg");
     let lang: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(r.join("editors/vscode/language-configuration.json")).unwrap(),
     )
@@ -39,6 +41,14 @@ fn vscode_files_parse() {
         &std::fs::read_to_string(r.join("editors/vscode/snippets/oii.json")).unwrap(),
     )
     .unwrap();
+    for f in ["icon.svg", "README.md", "CHANGELOG.md", ".vscodeignore"] {
+        assert!(
+            r.join("editors/vscode").join(f).exists(),
+            "vscode/{f} gone"
+        );
+    }
+    let svg = std::fs::read_to_string(r.join("editors/vscode/icon.svg")).unwrap();
+    assert!(svg.contains("<svg") && svg.contains("</svg>"));
 }
 
 #[test]

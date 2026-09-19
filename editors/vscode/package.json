@@ -5,7 +5,16 @@
   "version": "0.1.0",
   "publisher": "celvra",
   "license": "Apache-2.0",
-  "repository": "https://github.com/xyle-os/oii",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/xyle-os/oii",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xyle-os/oii.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xyle-os/oii/issues"
+  },
+  "keywords": ["oii", "config", "brackets", "grammar"],
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Programming Languages"],
   "contributes": {
