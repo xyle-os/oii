@@ -3,7 +3,7 @@ use std::ops::Range;
 use chumsky::prelude::*;
 
 use crate::ast::{Attribute, Node, Value};
-use crate::diag::{loc_of, tr, Diag, Lang};
+use crate::diag::{Diag, Lang, loc_of, tr};
 use crate::lex::Kind;
 
 pub type TokErr = Simple<Kind, Range<usize>>;
@@ -40,7 +40,12 @@ fn value_parser(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone 
     recursive(move |value| {
         let array = just(Kind::LBracket)
             .ignored()
-            .then(value.clone().then_ignore(just(Kind::Comma).or_not().ignored()).repeated())
+            .then(
+                value
+                    .clone()
+                    .then_ignore(just(Kind::Comma).or_not().ignored())
+                    .repeated(),
+            )
             .then_ignore(just(Kind::RBracket).ignored())
             .map(|(_, vals)| Value::Array(vals))
             .labelled(tr(lang, "数组", "array"));
@@ -54,18 +59,24 @@ fn node_parser(lang: Lang) -> impl Parser<Kind, Node, Error = TokErr> + Clone {
         let name = select!(Kind::Name(s) => s).labelled(tr(lang, "节点名", "name"));
         let value = value_parser(lang);
         let scalar_value = scalar_parser(lang);
-        let attr = name
-            .clone()
-            .then(
-                choice((just(Kind::Colon).ignored(), just(Kind::Equals).ignored()))
-                    .labelled(tr(lang, "`:` 或 `=`", "`:` or `=`")),
-            )
-            .then(value.clone())
-            .map(|((key, _), value)| Attribute { key, value })
-            .labelled(tr(lang, "属性", "attr"));
+        let attr =
+            name.clone()
+                .then(
+                    choice((just(Kind::Colon).ignored(), just(Kind::Equals).ignored()))
+                        .labelled(tr(lang, "`:` 或 `=`", "`:` or `=`")),
+                )
+                .then(value.clone())
+                .map(|((key, _), value)| Attribute { key, value })
+                .labelled(tr(lang, "属性", "attr"));
         let cell = choice((
-            attr.clone().map(|a| Cells { attrs: vec![a], children: Vec::new() }),
-            node.clone().map(|n| Cells { attrs: Vec::new(), children: vec![n] }),
+            attr.clone().map(|a| Cells {
+                attrs: vec![a],
+                children: Vec::new(),
+            }),
+            node.clone().map(|n| Cells {
+                attrs: Vec::new(),
+                children: vec![n],
+            }),
         ))
         .then_ignore(just(Kind::Comma).or_not().ignored())
         .labelled(tr(lang, "属性或子节点", "attr or child"));
@@ -88,7 +99,12 @@ fn node_parser(lang: Lang) -> impl Parser<Kind, Node, Error = TokErr> + Clone {
             .then(body.or_not())
             .map(|((name, args), body)| {
                 let (attributes, children) = body.unwrap_or((Vec::new(), Vec::new()));
-                Node { name, args, attributes, children }
+                Node {
+                    name,
+                    args,
+                    attributes,
+                    children,
+                }
             })
             .labelled(tr(lang, "节点", "node"))
     })
@@ -104,15 +120,22 @@ fn impt_parser(lang: Lang) -> impl Parser<Kind, RawItem, Error = TokErr> + Clone
     just(Kind::Impt)
         .ignored()
         .then(entry.repeated())
-        .map_with_span(|(_, entries), sp: Range<usize>| RawItem { idx: sp.start, body: ItemBody::Impt(entries) })
+        .map_with_span(|(_, entries), sp: Range<usize>| RawItem {
+            idx: sp.start,
+            body: ItemBody::Impt(entries),
+        })
         .labelled(tr(lang, "impt", "impt"))
 }
 
 fn document(lang: Lang) -> impl Parser<Kind, Vec<RawItem>, Error = TokErr> + Clone {
     let node_item = node_parser(lang)
-        .map_with_span(|n, sp: Range<usize>| RawItem { idx: sp.start, body: ItemBody::Node(n) })
+        .map_with_span(|n, sp: Range<usize>| RawItem {
+            idx: sp.start,
+            body: ItemBody::Node(n),
+        })
         .labelled(tr(lang, "节点", "node"));
-    let top = choice((impt_parser(lang), node_item)).labelled(tr(lang, "impt 或节点", "impt or node"));
+    let top =
+        choice((impt_parser(lang), node_item)).labelled(tr(lang, "impt 或节点", "impt or node"));
     top.repeated().then_ignore(end())
 }
 
@@ -186,7 +209,11 @@ pub fn split(items: Vec<RawItem>, raw: &[(Kind, usize)], src: &str, lang: Lang) 
         }
     }
 
-    DocParts { imports, nodes, diags }
+    DocParts {
+        imports,
+        nodes,
+        diags,
+    }
 }
 
 fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> Diag {
@@ -236,7 +263,11 @@ fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> D
     )
 }
 
-fn hint_for(found: &Option<Kind>, label: &Option<String>, lang: Lang) -> (Option<String>, Option<String>) {
+fn hint_for(
+    found: &Option<Kind>,
+    label: &Option<String>,
+    lang: Lang,
+) -> (Option<String>, Option<String>) {
     let (zh, en) = match found {
         Some(Kind::LBrace) | Some(Kind::RBrace) => (
             Some("花括号没用. 作用域只认方括号"),
@@ -246,10 +277,12 @@ fn hint_for(found: &Option<Kind>, label: &Option<String>, lang: Lang) -> (Option
             Some("多了一个 `]`. 检查括号配对"),
             Some("stray `]`. check brackets"),
         ),
-        Some(Kind::Str(_)) if label.as_deref() == Some(tr(lang, "impt 或节点", "impt or node")) => (
-            Some("裸字符串不能当节点. impt 条目间加逗号"),
-            Some("string is not a node. separate impt entries with commas"),
-        ),
+        Some(Kind::Str(_)) if label.as_deref() == Some(tr(lang, "impt 或节点", "impt or node")) => {
+            (
+                Some("裸字符串不能当节点. impt 条目间加逗号"),
+                Some("string is not a node. separate impt entries with commas"),
+            )
+        }
         Some(Kind::Int(_)) | Some(Kind::Float(_))
             if label.as_deref() == Some(tr(lang, "属性或子节点", "attr or child")) =>
         {
@@ -258,10 +291,7 @@ fn hint_for(found: &Option<Kind>, label: &Option<String>, lang: Lang) -> (Option
                 Some("number is not a node. write arrays as key: [1, 2]"),
             )
         }
-        Some(Kind::Comma) => (
-            Some("逗号后面要有值"),
-            Some("comma needs a value after it"),
-        ),
+        Some(Kind::Comma) => (Some("逗号后面要有值"), Some("comma needs a value after it")),
         _ => (None, None),
     };
     (zh.map(str::to_string), en.map(str::to_string))

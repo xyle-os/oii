@@ -22,7 +22,10 @@ pub struct Node {
 
 impl Node {
     pub fn get(&self, key: &str) -> Option<&Value> {
-        self.attributes.iter().find(|a| a.key == key).map(|a| &a.value)
+        self.attributes
+            .iter()
+            .find(|a| a.key == key)
+            .map(|a| &a.value)
     }
 
     pub fn get_node(&self, name: &str) -> Option<&Node> {

@@ -13,10 +13,10 @@ pub use fmt::format_doc;
 
 pub mod prelude {
     pub use crate::ast::{Attribute, Doc, Node, Value};
-    pub use crate::diag::{render_diag, Diag, Lang, Level};
+    pub use crate::diag::{Diag, Lang, Level, render_diag};
     pub use crate::{
-        doc_to_object, format_doc, parse, parse_with, to_json, to_json_string, ParseOptions,
-        ParseOutput,
+        ParseOptions, ParseOutput, doc_to_object, format_doc, parse, parse_with, to_json,
+        to_json_string,
     };
 }
 #[derive(Debug, Clone)]
@@ -28,7 +28,11 @@ pub struct ParseOptions {
 
 impl Default for ParseOptions {
     fn default() -> Self {
-        ParseOptions { vars: HashMap::new(), lang: Lang::Zh, fix: false }
+        ParseOptions {
+            vars: HashMap::new(),
+            lang: Lang::Zh,
+            fix: false,
+        }
     }
 }
 
@@ -46,11 +50,17 @@ impl ParseOutput {
     }
 
     pub fn warnings(&self) -> Vec<&Diag> {
-        self.diagnostics.iter().filter(|d| d.level == Level::Warning).collect()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == Level::Warning)
+            .collect()
     }
 
     pub fn fixes(&self) -> Vec<&Diag> {
-        self.diagnostics.iter().filter(|d| d.level == Level::Fix).collect()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == Level::Fix)
+            .collect()
     }
 }
 
@@ -74,7 +84,11 @@ pub fn parse_with(src: &str, opts: &ParseOptions) -> ParseOutput {
     let mut out = ParseOutput {
         doc: None,
         diagnostics: Vec::new(),
-        fixed_source: if fix_applied { Some(work_src.clone()) } else { None },
+        fixed_source: if fix_applied {
+            Some(work_src.clone())
+        } else {
+            None
+        },
         fix_applied,
     };
 
@@ -85,7 +99,10 @@ pub fn parse_with(src: &str, opts: &ParseOptions) -> ParseOutput {
                 let parts_err = parts.diags.iter().any(|d| d.level == Level::Error);
                 diagnostics.extend(parts.diags);
                 if !parts_err {
-                    out.doc = Some(Doc { imports: parts.imports, nodes: parts.nodes });
+                    out.doc = Some(Doc {
+                        imports: parts.imports,
+                        nodes: parts.nodes,
+                    });
                 }
             }
             Err(d) => diagnostics.push(d),
@@ -128,7 +145,10 @@ fn node_as_object(n: &Node) -> serde_json::Value {
         map.insert(c.name.clone(), node_as_object(c));
     }
     if !n.args.is_empty() {
-        map.insert("args".to_string(), serde_json::Value::Array(n.args.iter().map(value_json).collect()));
+        map.insert(
+            "args".to_string(),
+            serde_json::Value::Array(n.args.iter().map(value_json).collect()),
+        );
     }
     serde_json::Value::Object(map)
 }

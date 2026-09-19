@@ -3,7 +3,11 @@ use crate::ast::{Doc, Node, Value};
 pub fn format_doc(doc: &Doc) -> String {
     let mut out = String::new();
     if !doc.imports.is_empty() {
-        let parts: Vec<String> = doc.imports.iter().map(|s| format!("\"{}\"", escape_str(s))).collect();
+        let parts: Vec<String> = doc
+            .imports
+            .iter()
+            .map(|s| format!("\"{}\"", escape_str(s)))
+            .collect();
         out.push_str(&format!("impt {}", parts.join(", ")));
         out.push('\n');
     }

@@ -2,14 +2,18 @@ use std::collections::HashMap;
 
 use oii::ast::{Doc, Node, Value};
 use oii::diag::Lang;
-use oii::{parse, parse_with, to_json, to_json_string, ParseOptions};
+use oii::{ParseOptions, parse, parse_with, to_json, to_json_string};
 
 fn opts(vars: &[(&str, &str)]) -> ParseOptions {
     let mut map = HashMap::new();
     for (k, v) in vars {
         map.insert(k.to_string(), v.to_string());
     }
-    ParseOptions { vars: map, lang: Lang::Zh, fix: false }
+    ParseOptions {
+        vars: map,
+        lang: Lang::Zh,
+        fix: false,
+    }
 }
 
 fn ok(src: &str) -> Doc {
@@ -34,12 +38,13 @@ fn get<'a>(node: &'a Node) -> impl Fn(&str) -> &'a Value + 'a {
 
 #[test]
 fn loose_attr_separators() {
-    let doc = ok(
-        "a [ x: 1 y: 2\nz:3, w: 4 ,]\n",
-    );
+    let doc = ok("a [ x: 1 y: 2\nz:3, w: 4 ,]\n");
     let n = &doc.nodes[0];
     assert_eq!(
-        n.attributes.iter().map(|a| a.key.as_str()).collect::<Vec<_>>(),
+        n.attributes
+            .iter()
+            .map(|a| a.key.as_str())
+            .collect::<Vec<_>>(),
         vec!["x", "y", "z", "w"]
     );
     assert_eq!(*attr(n, "x"), Value::Int(1));
@@ -55,19 +60,36 @@ fn loose_attr_separators() {
 fn array_with_space_or_comma_sep() {
     let doc = ok("a [ v: [1 2 3], w: [4, 5, 6], x: [7 8 9,] ]");
     let n = &doc.nodes[0];
-    assert_eq!(*attr(n, "v"), Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
-    assert_eq!(*attr(n, "w"), Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]));
-    assert_eq!(*attr(n, "x"), Value::Array(vec![Value::Int(7), Value::Int(8), Value::Int(9)]));
+    assert_eq!(
+        *attr(n, "v"),
+        Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        *attr(n, "w"),
+        Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)])
+    );
+    assert_eq!(
+        *attr(n, "x"),
+        Value::Array(vec![Value::Int(7), Value::Int(8), Value::Int(9)])
+    );
 
     let doc = ok("a [ matrix: [[1, 2], [3 4]] ]");
-    let Value::Array(row) = attr(&doc.nodes[0], "matrix") else { panic!("期望数组") };
+    let Value::Array(row) = attr(&doc.nodes[0], "matrix") else {
+        panic!("期望数组")
+    };
     assert_eq!(row.len(), 2);
 }
 
 #[test]
 fn auto_close_brackets_with_fix() {
     let src = "foo [\n  a: 1\n  bar [ b: 2\n";
-    let out = parse_with(src, &ParseOptions { fix: true, ..opts(&[]) });
+    let out = parse_with(
+        src,
+        &ParseOptions {
+            fix: true,
+            ..opts(&[])
+        },
+    );
     assert_eq!(out.doc.as_ref().expect("修复后应能解析").nodes.len(), 1);
     assert!(out.fix_applied);
     assert!(out.fixes().iter().any(|d| d.code == "F001"));
@@ -81,14 +103,20 @@ fn auto_close_brackets_with_fix() {
 
 #[test]
 fn interpolation_success_missing_warning() {
-    let doc = parse_with("msg [ text: \"你好 {name} 同学!\" ]", &opts(&[("name", "小明")]));
+    let doc = parse_with(
+        "msg [ text: \"你好 {name} 同学!\" ]",
+        &opts(&[("name", "小明")]),
+    );
     assert!(doc.doc.is_some());
     assert!(doc.warnings().is_empty());
     let n = &doc.doc.unwrap().nodes[0];
     assert_eq!(*attr(n, "text"), Value::Str("你好 小明 同学!".to_string()));
 
     let doc = parse_with("msg [ text: \"你好 {nobody}!\" ]", &opts(&[("other", "x")]));
-    assert_eq!(doc.doc.as_ref().unwrap().nodes[0].attributes[0].value, Value::Str("你好 !".into()));
+    assert_eq!(
+        doc.doc.as_ref().unwrap().nodes[0].attributes[0].value,
+        Value::Str("你好 !".into())
+    );
     assert_eq!(doc.warnings().len(), 1);
     assert_eq!(doc.warnings()[0].code, "W001");
 }
@@ -96,7 +124,10 @@ fn interpolation_success_missing_warning() {
 #[test]
 fn interpolation_survives_brace_and_escape() {
     let doc = parse_with("m [ a: \"{x}a{b}\" ]", &opts(&[("x", "1"), ("b", "2")]));
-    assert_eq!(attr(&doc.doc.unwrap().nodes[0], "a"), &Value::Str("1a2".to_string()));
+    assert_eq!(
+        attr(&doc.doc.unwrap().nodes[0], "a"),
+        &Value::Str("1a2".to_string())
+    );
 }
 
 #[test]
@@ -106,10 +137,16 @@ fn impt_requires_commas_and_is_first() {
     assert_eq!(doc.nodes.len(), 1);
 
     let e = parse("impt \"a\" \"b\"").unwrap_err();
-    assert!(e.iter().any(|d| d.code == "E006"), "缺逗号应报 E006: {e:#?}");
+    assert!(
+        e.iter().any(|d| d.code == "E006"),
+        "缺逗号应报 E006: {e:#?}"
+    );
 
     let e = parse("foo []\nimpt \"a\"").unwrap_err();
-    assert!(e.iter().any(|d| d.code == "E007"), "impt 必须在最前: {e:#?}");
+    assert!(
+        e.iter().any(|d| d.code == "E007"),
+        "impt 必须在最前: {e:#?}"
+    );
 
     let doc = parse("impt \"a\", \"b\", ").unwrap();
     assert_eq!(doc.imports.len(), 2);
@@ -175,7 +212,10 @@ fn node_name_vs_arg() {
     let doc = ok("foo bar baz []\nchild [ sub [] ]");
     assert_eq!(doc.nodes.len(), 2);
     assert_eq!(doc.nodes[0].name, "foo");
-    assert_eq!(doc.nodes[0].args, vec![Value::Bare("bar".into()), Value::Bare("baz".into())]);
+    assert_eq!(
+        doc.nodes[0].args,
+        vec![Value::Bare("bar".into()), Value::Bare("baz".into())]
+    );
     assert_eq!(doc.nodes[1].name, "child");
     assert_eq!(doc.nodes[1].children[0].name, "sub");
 }
@@ -191,23 +231,47 @@ fn error_line_and_col_precise() {
 #[test]
 fn i18n_zh_en() {
     let src = "a [ x: , ]";
-    let e = parse_with(src, &ParseOptions { lang: Lang::Zh, ..opts(&[]) });
-    let zh = e.diagnostics.iter().find(|d| d.level == oii::diag::Level::Error).unwrap();
+    let e = parse_with(
+        src,
+        &ParseOptions {
+            lang: Lang::Zh,
+            ..opts(&[])
+        },
+    );
+    let zh = e
+        .diagnostics
+        .iter()
+        .find(|d| d.level == oii::diag::Level::Error)
+        .unwrap();
     assert!(zh.message.contains("期望") || zh.message.contains("语法"));
 
-    let e = parse_with(src, &ParseOptions { lang: Lang::En, ..opts(&[]) });
-    let en = e.diagnostics.iter().find(|d| d.level == oii::diag::Level::Error).unwrap();
+    let e = parse_with(
+        src,
+        &ParseOptions {
+            lang: Lang::En,
+            ..opts(&[])
+        },
+    );
+    let en = e
+        .diagnostics
+        .iter()
+        .find(|d| d.level == oii::diag::Level::Error)
+        .unwrap();
     assert_ne!(zh.message, en.message);
 }
 
 #[test]
 fn to_json_structure() {
-    let doc = ok("impt \"a\"\nuser [ name: \"mike\", age: 28, admin: true, flags: [1, 2], note: null ]");
+    let doc =
+        ok("impt \"a\"\nuser [ name: \"mike\", age: 28, admin: true, flags: [1, 2], note: null ]");
     let j = to_json(&doc);
     assert_eq!(j["imports"], serde_json::json!(["a"]));
     assert_eq!(j["nodes"][0]["name"], serde_json::json!("user"));
     assert_eq!(j["nodes"][0]["attributes"]["age"], serde_json::json!(28));
-    assert_eq!(j["nodes"][0]["attributes"]["flags"], serde_json::json!([1, 2]));
+    assert_eq!(
+        j["nodes"][0]["attributes"]["flags"],
+        serde_json::json!([1, 2])
+    );
     assert!(j["nodes"][0]["attributes"]["note"].is_null());
     let s = to_json_string(&doc);
     assert!(s.contains("\"imports\""));
@@ -278,7 +342,9 @@ fn keyword_values_are_not_bare() {
 
 #[test]
 fn value_accessors() {
-    let doc = ok("svc [ name: \"web\", port: 8080, ratio: 1.5, live: true, nil: null, xs: [1, 2], bare: 原生词 ]");
+    let doc = ok(
+        "svc [ name: \"web\", port: 8080, ratio: 1.5, live: true, nil: null, xs: [1, 2], bare: 原生词 ]",
+    );
     let n = &doc.nodes[0];
     assert_eq!(n.get("name").and_then(Value::as_str), Some("web"));
     assert_eq!(n.get("port").and_then(Value::as_int), Some(8080));
@@ -296,7 +362,10 @@ fn value_accessors() {
 fn node_getters() {
     let doc = ok("root [ child [ a: 1 ] child [ a: 2 ] leaf [] ]");
     let root = &doc.nodes[0];
-    assert_eq!(root.get_node("child").unwrap().get("a").unwrap(), &Value::Int(1));
+    assert_eq!(
+        root.get_node("child").unwrap().get("a").unwrap(),
+        &Value::Int(1)
+    );
     assert_eq!(root.find_all("child").count(), 2);
     assert!(root.get_node("leaf").is_some());
     assert!(root.get_node("nope").is_none());
@@ -306,7 +375,9 @@ fn node_getters() {
 
 #[test]
 fn serde_roundtrip() {
-    let doc = ok("impt \"a\"\nm [ s: \"x\", i: 7, f: 1.5, b: true, n: null, arr: [1, \"2\"], r: #\"raw\"#, bare: 词 ]");
+    let doc = ok(
+        "impt \"a\"\nm [ s: \"x\", i: 7, f: 1.5, b: true, n: null, arr: [1, \"2\"], r: #\"raw\"#, bare: 词 ]",
+    );
     let j = serde_json::to_string(&doc).unwrap();
     let back: Doc = serde_json::from_str(&j).unwrap();
     assert_eq!(back, doc);
@@ -327,7 +398,11 @@ fn deserialize_into_user_struct() {
     }
     impl Default for Server {
         fn default() -> Self {
-            Server { port: 0, name: None, timers: None }
+            Server {
+                port: 0,
+                name: None,
+                timers: None,
+            }
         }
     }
     let doc = ok("server [ port: 8080, name: \"web\" ]");

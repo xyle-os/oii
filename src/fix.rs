@@ -1,4 +1,4 @@
-use crate::diag::{loc_of, Diag, Lang};
+use crate::diag::{Diag, Lang, loc_of};
 
 pub fn apply_auto_fix(src: &str, lang: Lang) -> (String, Vec<Diag>) {
     let mut open = 0usize;
@@ -10,8 +10,7 @@ pub fn apply_auto_fix(src: &str, lang: Lang) -> (String, Vec<Diag>) {
             '"' => {
                 while let Some(d) = chars.next() {
                     if d == '\\' {
-                        if chars.next().is_some() {
-                        }
+                        if chars.next().is_some() {}
                         continue;
                     }
                     if d == '"' || d == '\n' {
@@ -62,8 +61,7 @@ pub fn apply_auto_fix(src: &str, lang: Lang) -> (String, Vec<Diag>) {
             ']' => {
                 close += 1;
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 

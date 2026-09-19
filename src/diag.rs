@@ -16,7 +16,10 @@ impl Lang {
     }
 
     pub fn from_env() -> Lang {
-        std::env::var("OII_LANG").ok().and_then(|s| Lang::parse(&s)).unwrap_or(Lang::Zh)
+        std::env::var("OII_LANG")
+            .ok()
+            .and_then(|s| Lang::parse(&s))
+            .unwrap_or(Lang::Zh)
     }
 }
 
@@ -177,13 +180,21 @@ pub fn loc_of(src: &str, a: usize, b: usize) -> Loc {
     let b = b.max(a).min(src.len());
     let (line, col) = line_col(src, a);
     let (end_line, end_col) = line_col(src, b);
-    Loc { line, col, end_line, end_col }
+    Loc {
+        line,
+        col,
+        end_line,
+        end_col,
+    }
 }
 
 pub fn render_diag(src: &str, d: &Diag) -> String {
     let mut out = String::new();
     let pos = format!("{}:{}", d.loc.line, d.loc.col);
-    out.push_str(&format!("{} {} [{}] {}\n", d.level_word, pos, d.code, d.message));
+    out.push_str(&format!(
+        "{} {} [{}] {}\n",
+        d.level_word, pos, d.code, d.message
+    ));
     if let Some(line_text) = src.lines().nth(d.loc.line.saturating_sub(1) as usize) {
         let caret_len = if d.loc.line == d.loc.end_line {
             (d.loc.end_col - d.loc.col).max(1) as usize
@@ -194,7 +205,10 @@ pub fn render_diag(src: &str, d: &Diag) -> String {
         for _ in 0..caret_len {
             caret.push(if d.level == Level::Error { '^' } else { '-' });
         }
-        out.push_str(&format!("   {} | {}\n   {} | {}\n", d.loc.line, line_text, d.loc.line, caret));
+        out.push_str(&format!(
+            "   {} | {}\n   {} | {}\n",
+            d.loc.line, line_text, d.loc.line, caret
+        ));
     }
     if let Some(h) = &d.hint {
         out.push_str(&format!("   hint: {h}\n"));

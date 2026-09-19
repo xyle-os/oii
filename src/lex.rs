@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::diag::{loc_of, tr, Diag, Lang};
+use crate::diag::{Diag, Lang, loc_of, tr};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Name(String),
@@ -117,7 +117,15 @@ impl<'a> Lexer<'a> {
         a: usize,
         b: usize,
     ) -> Diag {
-        Diag::error_hint(self.lang, code, zh, en, Some(zh_hint), Some(en_hint), loc_of(self.src, a, b))
+        Diag::error_hint(
+            self.lang,
+            code,
+            zh,
+            en,
+            Some(zh_hint),
+            Some(en_hint),
+            loc_of(self.src, a, b),
+        )
     }
 }
 
@@ -160,7 +168,13 @@ pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
                         lx.bump();
                     }
                     if !closed {
-                        diags.push(lx.err("E008", "块注释没闭合", "unclosed block comment", start, lx.byte));
+                        diags.push(lx.err(
+                            "E008",
+                            "块注释没闭合",
+                            "unclosed block comment",
+                            start,
+                            lx.byte,
+                        ));
                     }
                 }
                 _ => {
@@ -237,12 +251,17 @@ pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
             }
             '-' | '+' => {
                 let next = lx.peek2();
-                let is_num = next.map(|d| d.is_ascii_digit() || d == '.').unwrap_or(false);
+                let is_num = next
+                    .map(|d| d.is_ascii_digit() || d == '.')
+                    .unwrap_or(false);
                 if is_num {
                     if !scan_number(&mut lx, &mut tokens, &mut diags) {
                         scan_word(&mut lx, &mut tokens);
                     }
-                } else if next.map(|d| d.is_alphanumeric() || d == '_' || d == '.').unwrap_or(false) {
+                } else if next
+                    .map(|d| d.is_alphanumeric() || d == '_' || d == '.')
+                    .unwrap_or(false)
+                {
                     scan_word(&mut lx, &mut tokens);
                 } else {
                     let start = lx.byte;
@@ -256,12 +275,24 @@ pub fn lex(src: &str, vars: &HashMap<String, String>, lang: Lang) -> LexOut {
             _ => {
                 let start = lx.byte;
                 lx.bump();
-                diags.push(lx.err("E011", format!("非法字符 `{c}`", c = c).as_str(), "bad char", start, lx.byte));
+                diags.push(lx.err(
+                    "E011",
+                    format!("非法字符 `{c}`", c = c).as_str(),
+                    "bad char",
+                    start,
+                    lx.byte,
+                ));
             }
         }
         if lx.pos == before && lx.pos < lx.chars.len() {
             lx.bump();
-            diags.push(lx.err("E011", "非法字符", "bad char", lx.byte.saturating_sub(1), lx.byte));
+            diags.push(lx.err(
+                "E011",
+                "非法字符",
+                "bad char",
+                lx.byte.saturating_sub(1),
+                lx.byte,
+            ));
         }
     }
 
@@ -367,7 +398,13 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                 }
             }
             if !frac.is_empty() && !underscores_ok(&frac) {
-                diags.push(Diag::error(lx.lang, "E005", "小数里下划线放错了", "bad underscore in fraction", loc(lx)));
+                diags.push(Diag::error(
+                    lx.lang,
+                    "E005",
+                    "小数里下划线放错了",
+                    "bad underscore in fraction",
+                    loc(lx),
+                ));
                 return true;
             }
         } else if is_float_delim(lx.peek2().unwrap_or(' ')) {
@@ -465,7 +502,13 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                 true
             }
             Err(_) => {
-                diags.push(Diag::error(lx.lang, "E005", "浮点数坏了", "bad float", loc(lx)));
+                diags.push(Diag::error(
+                    lx.lang,
+                    "E005",
+                    "浮点数坏了",
+                    "bad float",
+                    loc(lx),
+                ));
                 true
             }
         }
@@ -639,7 +682,11 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                         diags.push(Diag::error(
                             lx.lang,
                             "E004",
-                            format!("转义坏了 `\\{c}`", c = other.map(|x| x.to_string()).unwrap_or_else(|| "".into())).as_str(),
+                            format!(
+                                "转义坏了 `\\{c}`",
+                                c = other.map(|x| x.to_string()).unwrap_or_else(|| "".into())
+                            )
+                            .as_str(),
                             "bad escape",
                             loc_of(lx.src, esc_start, lx.byte + 1),
                         ));

@@ -4,8 +4,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use oii::diag::{render_diag, Lang};
-use oii::{parse_with, ParseOptions};
+use oii::diag::{Lang, render_diag};
+use oii::{ParseOptions, parse_with};
 
 #[derive(Parser)]
 #[command(
@@ -96,7 +96,9 @@ fn resolve_lang(arg: Option<LangArg>) -> Lang {
 fn read_input(path: &str) -> Result<String, String> {
     if path == "-" {
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("stdin read failed: {e}"))?;
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("stdin read failed: {e}"))?;
         Ok(buf)
     } else {
         std::fs::read_to_string(path).map_err(|e| format!("read {path} failed: {e}"))
@@ -133,7 +135,15 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<u8, String> {
     match cli.cmd {
-        Cmd::Parse { file, fix, write, json, lang, vars, env } => {
+        Cmd::Parse {
+            file,
+            fix,
+            write,
+            json,
+            lang,
+            vars,
+            env,
+        } => {
             let src = read_input(&file)?;
             let opts = ParseOptions {
                 vars: collect_vars(vars, env),
@@ -144,7 +154,14 @@ fn run(cli: Cli) -> Result<u8, String> {
             for d in &out.diagnostics {
                 eprint!(
                     "{}",
-                    render_diag(if out.fix_applied { out.fixed_source.as_deref().unwrap_or(&src) } else { &src }, d)
+                    render_diag(
+                        if out.fix_applied {
+                            out.fixed_source.as_deref().unwrap_or(&src)
+                        } else {
+                            &src
+                        },
+                        d
+                    )
                 );
             }
             if out.has_errors() {
@@ -162,20 +179,38 @@ fn run(cli: Cli) -> Result<u8, String> {
                     if file == "-" {
                         print!("{fixed}");
                     } else {
-                        std::fs::write(&file, fixed).map_err(|e| format!("write {file} failed: {e}"))?;
+                        std::fs::write(&file, fixed)
+                            .map_err(|e| format!("write {file} failed: {e}"))?;
                     }
                 }
             }
             Ok(if json && out.doc.is_none() { 1 } else { 0 })
         }
-        Cmd::ToJson { file, fix, lang, vars, env } => {
+        Cmd::ToJson {
+            file,
+            fix,
+            lang,
+            vars,
+            env,
+        } => {
             let src = read_input(&file)?;
-            let opts = ParseOptions { vars: collect_vars(vars, env), lang: resolve_lang(lang), fix };
+            let opts = ParseOptions {
+                vars: collect_vars(vars, env),
+                lang: resolve_lang(lang),
+                fix,
+            };
             let out = parse_with(&src, &opts);
             for d in &out.diagnostics {
                 eprint!(
                     "{}",
-                    render_diag(if out.fix_applied { out.fixed_source.as_deref().unwrap_or(&src) } else { &src }, d)
+                    render_diag(
+                        if out.fix_applied {
+                            out.fixed_source.as_deref().unwrap_or(&src)
+                        } else {
+                            &src
+                        },
+                        d
+                    )
                 );
             }
             match &out.doc {
@@ -186,12 +221,21 @@ fn run(cli: Cli) -> Result<u8, String> {
                 None => Ok(1),
             }
         }
-        Cmd::Fmt { file, check, write, lang } => {
+        Cmd::Fmt {
+            file,
+            check,
+            write,
+            lang,
+        } => {
             let src = match &file {
                 Some(p) => read_input(p)?,
                 None => read_input("-")?,
             };
-            let opts = ParseOptions { vars: HashMap::new(), lang: resolve_lang(lang), fix: false };
+            let opts = ParseOptions {
+                vars: HashMap::new(),
+                lang: resolve_lang(lang),
+                fix: false,
+            };
             let out = parse_with(&src, &opts);
             for d in &out.diagnostics {
                 eprint!("{}", render_diag(&src, d));
