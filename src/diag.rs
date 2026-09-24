@@ -192,10 +192,10 @@ pub fn render_diag(src: &str, d: &Diag) -> String {
     render_diag_with_file(src, None, d)
 }
 
-// file shows in header. pass None for stdin pipes.
+// file shows in header pass none for stdin pipes
 pub fn render_diag_with_file(src: &str, file: Option<&str>, d: &Diag) -> String {
     let mut out = String::new();
-    // eof errors point past the last line. clamp to eol.
+    // eof errors point past the last line clamp to eol
     let total = src.lines().count().max(1) as u32;
     let over = d.loc.line > total;
     let line_no = d.loc.line.min(total);
@@ -241,13 +241,13 @@ pub fn render_diag_with_file(src: &str, file: Option<&str>, d: &Diag) -> String 
         ));
     }
     if let Some(h) = &d.hint {
-        // tag stays english. grep-friendly.
+        // tag stays english grep-friendly
         out.push_str(&format!("   hint: {h}\n"));
     }
     out
 }
 
-// tabs expand to 4-stop. caret must match shown text.
+// tabs expand to 4-stop caret must match shown text
 fn expand_tabs(s: &str) -> String {
     let mut out = String::new();
     let mut col = 0usize;
@@ -304,13 +304,13 @@ fn caret_span(line: &str, d: &Diag) -> (String, String) {
                 };
             }
         }
-        // span ran past eol (eof case). flag one cell.
+        // span ran past eol (eof case) flag one cell
         if to >= chars.len() && from >= chars.len() {
             len = 1;
         }
         len = len.max(1);
     } else {
-        // multiline. mark to eol.
+        // multiline mark to eol
         len = 1;
     }
     let mark = if d.level == Level::Error { '^' } else { '-' };

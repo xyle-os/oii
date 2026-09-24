@@ -2,7 +2,8 @@ use std::ops::Range;
 
 use chumsky::prelude::*;
 
-use crate::ast::{Attribute, Node, Value};
+use crate::ast::{Attribute, Func, Node, Param, Value};
+use crate::body;
 use crate::diag::{Diag, Lang, loc_of, tr};
 use crate::lex::Kind;
 
@@ -11,6 +12,15 @@ pub type TokErr = Simple<Kind, Range<usize>>;
 pub enum ItemBody {
     Impt(Vec<(String, usize)>),
     Node(Node),
+    Func(FuncRaw),
+}
+
+// func before the body is parsed tokens keep the exact source order
+pub struct FuncRaw {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub body_tokens: Vec<Kind>,
+    pub body_start: usize,
 }
 
 pub struct RawItem {
@@ -110,6 +120,62 @@ fn node_parser(lang: Lang) -> impl Parser<Kind, Node, Error = TokErr> + Clone {
     })
 }
 
+// collect a balanced bracket region as flat tokens brackets stay in
+fn inner_tokens() -> impl Parser<Kind, Vec<Kind>, Error = TokErr> + Clone {
+    recursive(|inner| {
+        let nested = just(Kind::LBracket)
+            .ignore_then(inner.clone())
+            .then_ignore(just(Kind::RBracket))
+            .map(|mut v: Vec<Kind>| {
+                let mut out = vec![Kind::LBracket];
+                out.append(&mut v);
+                out.push(Kind::RBracket);
+                out
+            });
+        let plain =
+            filter::<Kind, _, TokErr>(|k: &Kind| !matches!(k, Kind::LBracket | Kind::RBracket))
+                .map(|k| vec![k]);
+        choice((nested, plain))
+            .repeated()
+            .map(|chunks: Vec<Vec<Kind>>| chunks.into_iter().flatten().collect())
+    })
+}
+
+fn fun_parser(lang: Lang) -> impl Parser<Kind, RawItem, Error = TokErr> + Clone {
+    let param = select!(Kind::Name(s) => s)
+        .then(
+            choice((just(Kind::Colon).ignored(), just(Kind::Equals).ignored()))
+                .ignore_then(value_parser(lang))
+                .or_not(),
+        )
+        .map(|(name, default)| Param { name, default });
+    let params = param
+        .then_ignore(just(Kind::Comma).or_not().ignored())
+        .repeated()
+        .delimited_by(just(Kind::LParen).ignored(), just(Kind::RParen).ignored());
+    let body = just(Kind::LBracket)
+        .ignore_then(inner_tokens())
+        .then_ignore(just(Kind::RBracket))
+        .map_with_span(|tokens, sp: Range<usize>| (tokens, sp.start + 1));
+    just(Kind::Fun)
+        .ignored()
+        .ignore_then(select!(Kind::Name(s) => s))
+        .then(params)
+        .then(body)
+        .map_with_span(
+            |((name, params), (body_tokens, body_start)), sp: Range<usize>| RawItem {
+                idx: sp.start,
+                body: ItemBody::Func(FuncRaw {
+                    name,
+                    params,
+                    body_tokens,
+                    body_start,
+                }),
+            },
+        )
+        .labelled(tr(lang, "fun", "fun"))
+}
+
 fn impt_parser(lang: Lang) -> impl Parser<Kind, RawItem, Error = TokErr> + Clone {
     let entry = choice((
         select!(Kind::Str(s) => s).labelled(tr(lang, "字符串", "string")),
@@ -134,14 +200,18 @@ fn document(lang: Lang) -> impl Parser<Kind, Vec<RawItem>, Error = TokErr> + Clo
             body: ItemBody::Node(n),
         })
         .labelled(tr(lang, "节点", "node"));
-    let top =
-        choice((impt_parser(lang), node_item)).labelled(tr(lang, "impt 或节点", "impt or node"));
+    let top = choice((impt_parser(lang), fun_parser(lang), node_item)).labelled(tr(
+        lang,
+        "impt 或节点",
+        "impt or node",
+    ));
     top.repeated().then_ignore(end())
 }
 
 pub struct DocParts {
     pub imports: Vec<String>,
     pub nodes: Vec<Node>,
+    pub funcs: Vec<Func>,
     pub diags: Vec<Diag>,
 }
 
@@ -159,6 +229,7 @@ pub fn parse_tokens(raw: &[(Kind, usize)], src: &str, lang: Lang) -> Result<Vec<
 pub fn split(items: Vec<RawItem>, raw: &[(Kind, usize)], src: &str, lang: Lang) -> DocParts {
     let mut imports = Vec::new();
     let mut nodes = Vec::new();
+    let mut funcs = Vec::new();
     let mut diags = Vec::new();
     let mut first_node_idx: Option<usize> = None;
 
@@ -206,12 +277,39 @@ pub fn split(items: Vec<RawItem>, raw: &[(Kind, usize)], src: &str, lang: Lang) 
                 }
                 nodes.push(n);
             }
+            ItemBody::Func(fr) => {
+                if first_node_idx.is_none() {
+                    first_node_idx = Some(item.idx);
+                }
+                match body::parse_func_body(&fr.body_tokens) {
+                    Ok((desc, body)) => funcs.push(Func {
+                        name: fr.name,
+                        params: fr.params,
+                        desc,
+                        body,
+                    }),
+                    Err(e) => {
+                        let at = fr.body_start + e.at;
+                        let byte = raw.get(at).map(|t| t.1).unwrap_or(src.len());
+                        diags.push(Diag::error_hint(
+                            lang,
+                            "E010",
+                            &e.zh,
+                            &e.en,
+                            Some("函数体看 fun 的写法"),
+                            Some("see the fun syntax"),
+                            loc_of(src, byte, byte.saturating_add(1).min(src.len())),
+                        ));
+                    }
+                }
+            }
         }
     }
 
     DocParts {
         imports,
         nodes,
+        funcs,
         diags,
     }
 }
@@ -221,7 +319,7 @@ fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> D
     let found = err.found().cloned();
     let at_end = sp.start >= raw.len();
     let byte = raw.get(sp.start).map(|t| t.1).unwrap_or(src.len());
-    // span covers the offending token only. never backwards.
+    // span covers the offending token only never backwards
     let end_byte = raw
         .get(sp.start)
         .map(|t| (t.1 + tok_width(&t.0)).min(src.len()))
@@ -259,7 +357,7 @@ fn grammar_diag(err: &TokErr, raw: &[(Kind, usize)], src: &str, lang: Lang) -> D
     )
 }
 
-// source width of one token. clamped, display only.
+// source width of one token clamped, display only
 fn tok_width(k: &Kind) -> usize {
     match k {
         Kind::Name(s) | Kind::Str(s) | Kind::RawStr(s) => s.len().clamp(1, 12) + 2,
@@ -273,7 +371,7 @@ fn tok_width(k: &Kind) -> usize {
     }
 }
 
-// dedupe, drop noise, cap length. stable order.
+// dedupe, drop noise, cap length stable order
 fn clean_expects(err: &TokErr, lang: Lang) -> String {
     let mut seen: Vec<String> = Vec::new();
     for e in err.expected() {
@@ -291,7 +389,7 @@ fn clean_expects(err: &TokErr, lang: Lang) -> String {
             seen.push(l);
         }
     }
-    // top label repeats the item label. drop the dup.
+    // top label repeats the item label drop the dup
     let dup_top = tr(lang, "impt 或节点", "impt or node").to_string();
     if seen.contains(&dup_top) && seen.iter().any(|s| s == "impt") {
         seen.retain(|s| s != &dup_top);
@@ -311,7 +409,7 @@ fn clean_expects(err: &TokErr, lang: Lang) -> String {
     seen.join(", ")
 }
 
-// `x: ,` means empty value, not stray sep. peek next token.
+// `x: ,` means empty value, not stray sep peek next token
 fn missing_value(raw: &[(Kind, usize)], at: usize) -> bool {
     match raw.get(at + 1).map(|t| &t.0) {
         None | Some(Kind::Comma) | Some(Kind::RBracket) => true,
@@ -319,7 +417,7 @@ fn missing_value(raw: &[(Kind, usize)], at: usize) -> bool {
     }
 }
 
-// tailored message per case. generic shape last.
+// tailored message per case generic shape last
 fn message_for(
     found: &Option<Kind>,
     at_end: bool,

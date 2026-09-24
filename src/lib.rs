@@ -1,32 +1,45 @@
 pub mod ast;
+pub mod body;
+pub mod decode;
 pub mod diag;
+pub mod edit;
+pub mod eval;
 pub mod fix;
 pub mod fmt;
 pub mod grammar;
 pub mod lex;
 pub mod lint;
+#[cfg(feature = "json")]
 pub mod lsp;
 
 use std::collections::HashMap;
 
-pub use ast::{Attribute, Doc, Node, Value};
+pub use ast::{Attribute, BinOp, Doc, Expr, Func, Node, Param, Stmt, UnOp, Value};
+pub use decode::{DecodeError, FromNode, FromValue};
+// same name as the trait. macro and trait live in different namespaces
 pub use diag::{Diag, Lang, Level};
+pub use edit::DocFile;
+pub use eval::{EvalError, EvalOptions, EvalOutput, eval, eval_call};
 pub use fmt::format_doc;
+#[cfg(feature = "derive")]
+pub use oii_derive::FromNode;
 
 pub mod prelude {
-    pub use crate::ast::{Attribute, Doc, Node, Value};
+    pub use crate::ast::{Attribute, BinOp, Doc, Expr, Func, Node, Param, Stmt, UnOp, Value};
+    pub use crate::decode::{DecodeError, FromNode, FromValue};
     pub use crate::diag::{Diag, Lang, Level, render_diag, render_diag_with_file};
-    pub use crate::{
-        ParseOptions, ParseOutput, doc_to_object, format_doc, parse, parse_with, to_json,
-        to_json_string,
-    };
+    pub use crate::edit::DocFile;
+    pub use crate::eval::{EvalError, EvalOptions, EvalOutput, eval, eval_call};
+    pub use crate::{ParseOptions, ParseOutput, format_doc, parse, parse_with};
+    #[cfg(feature = "json")]
+    pub use crate::{doc_to_object, to_json, to_json_string};
 }
 #[derive(Debug, Clone)]
 pub struct ParseOptions {
     pub vars: HashMap<String, String>,
     pub lang: Lang,
     pub fix: bool,
-    // keep {var} as-is. fmt uses this.
+    // keep {var} as-is fmt uses this
     pub keep_interp: bool,
 }
 
@@ -107,8 +120,9 @@ pub fn parse_with(src: &str, opts: &ParseOptions) -> ParseOutput {
                     out.doc = Some(Doc {
                         imports: parts.imports,
                         nodes: parts.nodes,
+                        funcs: parts.funcs,
                     });
-                    // warnings only. never fail a clean parse.
+                    // warnings only never fail a clean parse
                     diagnostics.extend(lint::check(&lexed.tokens, &work_src, lang));
                 }
             }
@@ -128,13 +142,16 @@ pub fn parse(src: &str) -> Result<Doc, Vec<Diag>> {
     }
 }
 
+#[cfg(feature = "json")]
 pub fn to_json(doc: &Doc) -> serde_json::Value {
     serde_json::json!({
         "imports": doc.imports,
         "nodes": doc.nodes.iter().map(node_json).collect::<Vec<_>>(),
+        "funcs": doc.funcs.iter().map(|f| serde_json::to_value(f).unwrap_or_default()).collect::<Vec<_>>(),
     })
 }
 
+#[cfg(feature = "json")]
 pub fn doc_to_object(doc: &Doc) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for n in &doc.nodes {
@@ -143,6 +160,7 @@ pub fn doc_to_object(doc: &Doc) -> serde_json::Value {
     serde_json::Value::Object(map)
 }
 
+#[cfg(feature = "json")]
 fn node_as_object(n: &Node) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for a in &n.attributes {
@@ -160,6 +178,7 @@ fn node_as_object(n: &Node) -> serde_json::Value {
     serde_json::Value::Object(map)
 }
 
+#[cfg(feature = "json")]
 fn node_json(n: &Node) -> serde_json::Value {
     let mut attrs = serde_json::Map::new();
     for a in &n.attributes {
@@ -173,7 +192,8 @@ fn node_json(n: &Node) -> serde_json::Value {
     })
 }
 
-fn value_json(v: &Value) -> serde_json::Value {
+#[cfg(feature = "json")]
+pub fn value_json(v: &Value) -> serde_json::Value {
     match v {
         Value::Bare(s) => serde_json::Value::String(s.clone()),
         Value::Str(s) => serde_json::Value::String(s.clone()),
@@ -183,9 +203,19 @@ fn value_json(v: &Value) -> serde_json::Value {
         Value::Bool(b) => serde_json::json!(b),
         Value::Null => serde_json::Value::Null,
         Value::Array(items) => serde_json::Value::Array(items.iter().map(value_json).collect()),
+        Value::Map(items) => {
+            let mut m = serde_json::Map::new();
+            for (k, v) in items {
+                m.insert(k.clone(), value_json(v));
+            }
+            serde_json::Value::Object(m)
+        }
+        // func has no json form
+        Value::Func(_) => serde_json::Value::Null,
     }
 }
 
+#[cfg(feature = "json")]
 pub fn to_json_string(doc: &Doc) -> String {
     serde_json::to_string_pretty(&to_json(doc)).unwrap_or_default()
 }

@@ -12,6 +12,10 @@ syntax region oiiBlockComment start='/\*' end='\*/'
 " impt goes first
 syntax keyword oiiImpt impt
 
+" func and control keywords
+syntax keyword oiiFun fun desc
+syntax keyword oiiControl let if else while for in return
+
 " bools and null
 syntax keyword oiiBool true false
 syntax keyword oiiNull null
@@ -40,6 +44,8 @@ highlight default link oiiLineComment Comment
 highlight default link oiiDocComment Comment
 highlight default link oiiBlockComment Comment
 highlight default link oiiImpt Keyword
+highlight default link oiiFun Keyword
+highlight default link oiiControl Statement
 highlight default link oiiBool Boolean
 highlight default link oiiNull Constant
 highlight default link oiiRaw String

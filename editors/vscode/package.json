@@ -2,7 +2,7 @@
   "name": "oii",
   "displayName": "OII",
   "description": "OII, the config language for Xyle. Brackets for scope.",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "publisher": "celvra",
   "license": "Apache-2.0",
   "icon": "icon.svg",

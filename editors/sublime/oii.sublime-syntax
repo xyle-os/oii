@@ -35,6 +35,8 @@ contexts:
       scope: constant.language.boolean.oii
     - match: (?<!\w)null(?!\w)
       scope: constant.language.null.oii
+    - match: (?<!\w)(fun|desc|let|if|else|while|for|in|return)(?!\w)
+      scope: keyword.control.oii
   raw-string:
     - match: '#"'
       scope: punctuation.definition.string.begin.oii

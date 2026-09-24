@@ -279,15 +279,25 @@ dependencies = [
 
 [[package]]
 name = "oii"
-version = "0.1.1"
+version = "1.0.0"
 dependencies = [
  "chumsky",
  "clap",
  "clap_complete",
  "lsp-server",
  "lsp-types",
+ "oii-derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "oii-derive"
+version = "1.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

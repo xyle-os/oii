@@ -12,6 +12,7 @@
    '("//.*$" . font-lock-comment-face)
    '("/\\*.*\\*/" . font-lock-comment-face)
    '("\\bimpt\\b" . font-lock-keyword-face)
+   '("\\b\\(fun\\|desc\\|let\\|if\\|else\\|while\\|for\\|in\\|return\\)\\b" . font-lock-keyword-face)
    '("\\b\\(true\\|false\\|null\\)\\b" . font-lock-constant-face)
    '("#\".*?\"#" . font-lock-string-face)
    '("\"\\(?:\\\\.\\|[^\"\\\\\\n]\\)*\"" . font-lock-string-face)

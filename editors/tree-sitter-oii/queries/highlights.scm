@@ -3,6 +3,17 @@
 ; so interpolation has no separate capture here.
 (comment) @comment
 (impt) @keyword
+("fun") @keyword.function
+("let") @keyword
+("if") @keyword
+("else") @keyword
+("while") @keyword
+("for") @keyword
+("in") @keyword
+("return") @keyword
+((name) @keyword
+  (#match? @keyword "^(desc)$"))
+(func name: (name) @function)
 (bool) @constant.builtin.boolean
 (null) @constant.builtin
 (string) @string

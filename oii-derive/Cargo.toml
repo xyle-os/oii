@@ -1,0 +1,15 @@
+[package]
+name = "oii-derive"
+version = "1.0.0"
+edition = "2024"
+description = "derive FromNode for oii. no json needed"
+license = "Apache-2.0"
+repository = "https://github.com/xyle-os/oii"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["derive"] }

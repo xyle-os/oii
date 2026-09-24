@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::diag::{Diag, Lang, loc_of};
 use crate::lex::Kind;
 
-// token-level lints. run only on docs that parsed clean.
+// token-level lints run only on docs that parsed clean
 pub fn check(tokens: &[(Kind, usize)], src: &str, lang: Lang) -> Vec<Diag> {
     let mut out = Vec::new();
     dup_keys(tokens, src, lang, &mut out);
@@ -11,7 +11,7 @@ pub fn check(tokens: &[(Kind, usize)], src: &str, lang: Lang) -> Vec<Diag> {
     out
 }
 
-// last wins is the rule. say so loudly.
+// last wins is the rule say so loudly
 fn dup_keys(tokens: &[(Kind, usize)], src: &str, lang: Lang, out: &mut Vec<Diag>) {
     // one key set per open bracket
     let mut stack: Vec<HashSet<String>> = vec![HashSet::new()];
@@ -59,7 +59,7 @@ fn dup_keys(tokens: &[(Kind, usize)], src: &str, lang: Lang, out: &mut Vec<Diag>
     }
 }
 
-// `foo` then `bar` on next line is one node with arg. often a typo.
+// `foo` then `bar` on next line is one node with arg often a typo
 fn swallowed_line(tokens: &[(Kind, usize)], src: &str, lang: Lang, out: &mut Vec<Diag>) {
     // map byte offset to line
     let mut line_of: HashMap<usize, u32> = HashMap::new();

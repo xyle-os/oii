@@ -10,8 +10,10 @@
     { "include": "#double-string" },
     { "include": "#numbers" },
     { "include": "#keywords" },
+    { "include": "#func" },
     { "include": "#attr" },
     { "include": "#punctuation" },
+    { "include": "#operators" },
     { "include": "#bare" }
   ],
   "repository": {
@@ -49,6 +51,22 @@
         {
           "name": "constant.language.null.oii",
           "match": "(?<!\\w)null(?!\\w)"
+        },
+        {
+          "name": "keyword.control.oii",
+          "match": "(?<!\\w)(let|if|else|while|for|in|return)(?!\\w)"
+        }
+      ]
+    },
+    "func": {
+      "patterns": [
+        {
+          "name": "keyword.control.fun.oii",
+          "match": "(?<!\\w)fun(?!\\w)"
+        },
+        {
+          "name": "keyword.other.desc.oii",
+          "match": "(?<!\\w)desc(?!\\w)"
         }
       ]
     },
@@ -152,16 +170,24 @@
           "match": "[:=]"
         },
         {
+          "name": "punctuation.section.parens.oii",
+          "match": "[()]"
+        },
+        {
           "name": "invalid.illegal.brace.oii",
           "match": "[{}]"
         },
         {
-          "name": "invalid.illegal.slash.oii",
-          "match": "(?<!/)/(?!/|\\*)"
-        },
-        {
           "name": "invalid.illegal.hash.oii",
           "match": "#(?!\")"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.oii",
+          "match": "==|!=|<=|>=|&&|\\|\\||[-+*/%<>!]"
         }
       ]
     },

@@ -487,6 +487,7 @@ fn fmt_raw_with_close_delim_survives() {
             }],
             children: vec![],
         }],
+        funcs: vec![],
     };
     let f = oii::format_doc(&doc);
     // quoted fallback parses as Str, not RawStr. content must match.
@@ -534,4 +535,406 @@ fn bare_node_swallow_warns() {
     // same line args stay quiet
     let out = parse_with("foo bar []", &opts(&[]));
     assert!(!out.diagnostics.iter().any(|d| d.code == "W003"));
+}
+
+#[test]
+fn func_parses_name_params_desc() {
+    let doc = ok(
+        "fun greet(name, punct: \"!\") [\n  desc: \"say hi\"\n  return \"hi \" + name + punct\n]",
+    );
+    let f = doc.func("greet").expect("func greet");
+    assert_eq!(f.name, "greet");
+    assert_eq!(f.params.len(), 2);
+    assert_eq!(f.params[0].name, "name");
+    assert_eq!(f.params[0].default, None);
+    assert_eq!(f.params[1].default, Some(Value::Str("!".into())));
+    assert_eq!(f.desc.as_deref(), Some("say hi"));
+    assert_eq!(f.body.len(), 1);
+    assert_eq!(doc.func("nope"), None);
+}
+
+#[test]
+fn func_body_parse_error_reports() {
+    let out = parse_with("fun f() [ let ]", &opts(&[]));
+    assert!(out.has_errors());
+    assert!(out.diagnostics.iter().any(|d| d.code == "E010"));
+}
+
+#[test]
+fn eval_recursion_factorial() {
+    let doc = ok(
+        "fun fact(n) [\n  let r: 1\n  while n > 1 [\n    r: r * n\n    n: n - 1\n  ]\n  return r\n]",
+    );
+    let out = oii::eval(&doc, "fact", &[Value::Int(5)]).unwrap();
+    assert_eq!(out.value, Value::Int(120));
+}
+
+#[test]
+fn eval_if_else_recursion() {
+    let doc = ok("fun fib(n) [\n  if n < 2 [ return n ]\n  return fib(n - 1) + fib(n - 2)\n]");
+    let out = oii::eval(&doc, "fib", &[Value::Int(10)]).unwrap();
+    assert_eq!(out.value, Value::Int(55));
+}
+
+#[test]
+fn eval_for_and_builtins() {
+    let doc = ok("fun total(xs) [\n  let s: 0\n  for x in xs [ s: s + x ]\n  return s\n]");
+    let args = vec![Value::Array(vec![
+        Value::Int(1),
+        Value::Int(2),
+        Value::Int(3),
+    ])];
+    let out = oii::eval(&doc, "total", &args).unwrap();
+    assert_eq!(out.value, Value::Int(6));
+
+    let doc = ok("fun n(xs) [ return len(push(xs, 9)) ]");
+    let args = vec![Value::Array(vec![Value::Int(1)])];
+    assert_eq!(oii::eval(&doc, "n", &args).unwrap().value, Value::Int(2));
+}
+
+#[test]
+fn eval_closures_and_first_class_funcs() {
+    let doc = ok(
+        "fun adder(n) [ return fun(x) [ return x + n ] ]\nfun apply(f, x) [ return f(x) ]\nfun inc(n) [ return n + 1 ]\nfun main() [ let a: adder(5)\n return a(10) + apply(inc, 4) ]",
+    );
+    assert_eq!(oii::eval(&doc, "main", &[]).unwrap().value, Value::Int(20));
+}
+
+#[test]
+fn eval_let_multi_and_destructure() {
+    let doc = ok(
+        "fun m() [\n  let a: 1, b: 2\n  let [x, y, *rest]: [10, 20, 30, 40]\n  return a + b + x + y + len(rest)\n]",
+    );
+    assert_eq!(oii::eval(&doc, "m", &[]).unwrap().value, Value::Int(35));
+    // arity mismatch errors
+    let doc = ok("fun bad() [ let [a, b]: [1] return a ]");
+    assert_eq!(oii::eval(&doc, "bad", &[]).unwrap_err().code, "E106");
+}
+
+#[test]
+fn insert_line_into_func_node_and_array() {
+    let src = "fun packages() [\n  neovim\n  git\n]\napps [\n  firefox\n]\nconfig [\n  registry: [\n    \"main\"\n  ]\n]\n";
+
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.insert("packages", "fastfetch").unwrap();
+    assert!(f.text().contains("git\n  fastfetch"), "{}", f.text());
+
+    // bare sibling gets a comma so it does not swallow the new node
+    f.insert("apps", "curl").unwrap();
+    assert!(f.text().contains("firefox,\n  curl"), "{}", f.text());
+    assert!(oii::parse(f.text()).is_ok());
+
+    // array attr appends an element
+    f.insert("config.registry", "\"extra\"").unwrap();
+    assert!(f.text().contains("\"main\"\n    \"extra\""), "{}", f.text());
+}
+
+#[test]
+fn insert_empty_bodies_open_up() {
+    let mut f = oii::DocFile::parse("fun p() []\napps []\n").unwrap();
+    f.insert("p", "one").unwrap();
+    f.insert("apps", "two").unwrap();
+    assert!(f.text().contains("fun p() [\n  one\n]"), "{}", f.text());
+    assert!(f.text().contains("apps [\n  two\n]"), "{}", f.text());
+    assert!(oii::parse(f.text()).is_ok());
+}
+
+#[test]
+fn insert_bad_raw_rolls_back() {
+    let src = "apps [\n  one\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    assert!(f.insert("apps", "a: [").is_err());
+    assert_eq!(f.text(), src);
+}
+
+#[test]
+fn add_node_and_add_func() {
+    let mut f = oii::DocFile::parse("root [\n  a: 1\n]\n").unwrap();
+    f.add_node(None, "top []").unwrap();
+    f.add_node(Some("root"), "child [\n  x: 1\n]").unwrap();
+    f.add_func("fun hi() [ return 1 ]").unwrap();
+    assert!(oii::parse(f.text()).is_ok());
+    let doc = oii::parse(f.text()).unwrap();
+    assert!(doc.node("top").is_some());
+    assert!(doc.node("root").unwrap().get_node("child").is_some());
+    assert!(doc.func("hi").is_some());
+}
+
+#[test]
+fn remove_func_node_attr() {
+    let src = "fun p() [\n  one\n]\napps [\n  firefox\n]\nserver [ port: 1, host: h ]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.remove("p").unwrap();
+    f.remove("apps.firefox").unwrap();
+    f.remove("server.port").unwrap();
+    assert!(!f.text().contains("fun p"));
+    assert!(!f.text().contains("firefox"));
+    assert!(!f.text().contains("port: 1"));
+    assert!(oii::parse(f.text()).is_ok());
+    assert_eq!(f.get("server.host").and_then(Value::as_str), Some("h"));
+}
+
+#[test]
+fn remove_stmt_and_array_elem() {
+    let src = "fun p() [\n  one\n  two\n]\nconfig [\n  reg: [\n    \"a\"\n    \"b\"\n  ]\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.remove("p.one").unwrap();
+    assert!(!f.text().contains("  one\n"), "{}", f.text());
+    f.remove("config.reg.b").unwrap();
+    assert!(!f.text().contains("\"b\""), "{}", f.text());
+    assert!(oii::parse(f.text()).is_ok());
+
+    // replace an array element
+    let mut f = oii::DocFile::parse("c [ r: [\"a\", \"b\"] ]\n").unwrap();
+    f.set("c.r.a", &Value::Str("x".into())).unwrap();
+    assert!(f.text().contains("\"x\""), "{}", f.text());
+    assert!(!f.text().contains("\"a\""));
+}
+
+#[test]
+fn insert_before_positions() {
+    let src = "apps [\n  firefox,\n  curl\n]\nfun p() [\n  one\n  two\n]\nconfig [\n  reg: [\n    \"a\"\n    \"b\"\n  ]\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+
+    // node body. firefox gets a comma so wget stays a sibling
+    f.insert_before("apps", "curl", "wget").unwrap();
+    assert!(
+        f.text().contains("firefox,\n  wget,\n  curl"),
+        "{}",
+        f.text()
+    );
+
+    // func statement
+    f.insert_before("p", "two", "mid").unwrap();
+    assert!(f.text().contains("one\n  mid\n  two"), "{}", f.text());
+
+    // array element
+    f.insert_before("config.reg", "\"b\"", "\"ab\"").unwrap();
+    assert!(
+        f.text().contains("\"a\"\n    \"ab\",\n    \"b\""),
+        "{}",
+        f.text()
+    );
+
+    assert!(oii::parse(f.text()).is_ok());
+}
+
+#[test]
+fn array_index_ops() {
+    let src = "c [ r: [\n    \"a\"\n    \"b\"\n  ] ]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.set_index("c.r", 0, &Value::Str("x".into())).unwrap();
+    assert!(f.text().contains("\"x\""), "{}", f.text());
+    f.insert_index("c.r", 1, "\"mid\"").unwrap();
+    assert!(
+        f.text().contains("\"x\"\n    \"mid\",\n    \"b\""),
+        "{}",
+        f.text()
+    );
+    f.remove_index("c.r", 0).unwrap();
+    assert!(!f.text().contains("\"x\""), "{}", f.text());
+    assert!(oii::parse(f.text()).is_ok());
+    assert!(f.set_index("c.r", 99, &Value::Int(1)).is_err());
+}
+
+#[test]
+fn tx_rolls_back_on_error() {
+    let src = "server [\n  port: 1\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    let r = f.transaction(|f| {
+        f.set("server.port", &Value::Int(2))?;
+        Err("boom".to_string())
+    });
+    assert!(r.is_err());
+    assert_eq!(f.text(), src);
+    assert_eq!(f.get("server.port"), Some(&Value::Int(1)));
+
+    // a good batch commits
+    f.transaction(|f| {
+        f.set("server.port", &Value::Int(2))?;
+        f.set("server.port", &Value::Int(3))?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(f.get("server.port"), Some(&Value::Int(3)));
+}
+
+#[test]
+fn eval_map_builtins() {
+    let doc = ok(
+        "fun m() [\n  let x: put(map(\"a\", 1), \"b\", 2)\n  return get(x, \"b\") + len(keys(x))\n]",
+    );
+    assert_eq!(oii::eval(&doc, "m", &[]).unwrap().value, Value::Int(4));
+    let doc = ok("fun f() [ return max(3, 9) + min(3, 9) ]");
+    assert_eq!(oii::eval(&doc, "f", &[]).unwrap().value, Value::Int(12));
+}
+
+#[test]
+fn eval_print_collects_output() {
+    let doc = ok("fun hi() [ print(\"a\")\n print(\"b\")\n return 0 ]");
+    let out = oii::eval(&doc, "hi", &[]).unwrap();
+    assert_eq!(out.output, vec!["a".to_string(), "b".to_string()]);
+}
+
+#[test]
+fn eval_limits_stop_runaway() {
+    let doc = ok("fun spin() [ while true [ ] return 0 ]");
+    let err = oii::eval(&doc, "spin", &[]).unwrap_err();
+    assert_eq!(err.code, "E102");
+}
+
+#[test]
+fn roundtrip_set_keeps_comments() {
+    let src = "server [\n  port: 1, // keep me\n  host: h\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.set("server.port", &Value::Int(2)).unwrap();
+    assert!(
+        f.text().contains("// keep me"),
+        "comment lost: {}",
+        f.text()
+    );
+    assert!(f.text().contains("port: 2"));
+    assert!(!f.text().contains("port: 1"));
+    assert_eq!(f.get("server.port"), Some(&Value::Int(2)));
+}
+
+#[test]
+fn roundtrip_set_adds_missing_attr() {
+    let src = "server [\n  port: 1\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.set("server.retries", &Value::Int(3)).unwrap();
+    assert_eq!(f.get("server.retries"), Some(&Value::Int(3)));
+    assert_eq!(f.get("server.port"), Some(&Value::Int(1)));
+}
+
+#[test]
+fn roundtrip_set_nested_and_desc() {
+    let src = "fun a() [ return 1 ]\nserver [ plugin [ name: \"x\" ] ]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.set("server.plugin.name", &Value::Str("y".into()))
+        .unwrap();
+    assert_eq!(
+        f.get("server.plugin.name").and_then(Value::as_str),
+        Some("y")
+    );
+    f.set_desc("a", "docs here").unwrap();
+    assert!(f.text().contains("desc: \"docs here\""));
+}
+
+#[test]
+fn roundtrip_add_and_remove() {
+    let src = "server [\n  port: 1\n]\nother []\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    f.add_attr("server", "host", &Value::Str("h".into()))
+        .unwrap();
+    assert!(f.text().contains("host: \"h\""));
+    assert_eq!(f.get("server.host").and_then(Value::as_str), Some("h"));
+    f.remove_node("other").unwrap();
+    assert!(!f.text().contains("other"));
+    assert!(oii::parse(f.text()).is_ok());
+}
+
+#[test]
+fn add_attr_handles_inline_and_tabs() {
+    // empty inline body opens up
+    let mut f = oii::DocFile::parse("server []\n").unwrap();
+    f.add_attr("server", "port", &Value::Int(1)).unwrap();
+    assert_eq!(
+        oii::parse(f.text())
+            .unwrap()
+            .node("server")
+            .unwrap()
+            .get("port"),
+        Some(&Value::Int(1))
+    );
+    assert!(f.text().contains("server [\n  port: 1\n]"));
+
+    // tab file keeps tabs
+    let mut f = oii::DocFile::parse("server [\n\tport: 1\n]\n").unwrap();
+    f.add_attr("server", "host", &Value::Str("h".into()))
+        .unwrap();
+    assert!(
+        f.text().contains("\thost: \"h\","),
+        "tabs lost: {}",
+        f.text()
+    );
+    assert!(oii::parse(f.text()).is_ok());
+}
+
+#[test]
+fn fmt_func_roundtrip_idempotent() {
+    let src = "fun f(x, y: 2) [ desc: \"d\"\n if x > 0 [ return x ] else [ return y ] ]";
+    let d1 = ok(src);
+    let f1 = oii::format_doc(&d1);
+    assert_eq!(parse(&f1).unwrap(), d1, "reparse mismatch: {f1}");
+    let f2 = oii::format_doc(&parse(&f1).unwrap());
+    assert_eq!(f1, f2);
+}
+
+#[test]
+fn decode_native_types() {
+    struct Cfg {
+        port: i64,
+        name: String,
+        flags: Vec<i64>,
+        ratio: Option<f64>,
+    }
+    impl oii::FromNode for Cfg {
+        fn from_node(n: &Node) -> Result<Self, oii::DecodeError> {
+            Ok(Cfg {
+                port: n.field("port")?,
+                name: n.field("name")?,
+                flags: n.field_or("flags", Vec::new())?,
+                ratio: n.field_opt("ratio")?,
+            })
+        }
+    }
+    let doc = ok("srv [ port: 8080, name: \"web\", flags: [1, 2] ]");
+    let cfg: Cfg = doc.node("srv").unwrap().decode().unwrap();
+    assert_eq!(cfg.port, 8080);
+    assert_eq!(cfg.name, "web");
+    assert_eq!(cfg.flags, vec![1, 2]);
+    assert_eq!(cfg.ratio, None);
+
+    let err = doc.node("srv").unwrap().field::<i64>("name").unwrap_err();
+    assert!(err.to_string().contains("name"));
+}
+
+#[test]
+fn decode_derive_macro() {
+    #[derive(oii::FromNode, PartialEq, Debug)]
+    struct Server {
+        port: i64,
+        #[oii(rename = "name")]
+        label: Option<String>,
+        #[oii(default)]
+        ttl: i64,
+        #[oii(skip)]
+        cached: bool,
+    }
+    let doc = ok("srv [ port: 8080, name: \"web\" ]");
+    let s: Server = doc.node("srv").unwrap().decode().unwrap();
+    assert_eq!(
+        s,
+        Server {
+            port: 8080,
+            label: Some("web".into()),
+            ttl: 0,
+            cached: false,
+        }
+    );
+
+    // missing required field errors with the field path
+    let doc = ok("srv [ name: \"web\" ]");
+    let err = doc.node("srv").unwrap().decode::<Server>().unwrap_err();
+    assert!(err.to_string().contains("port"));
+}
+
+#[test]
+fn funcs_survive_serde_roundtrip() {
+    let doc = ok("fun f(x) [ desc: \"d\"\n return x ]\nnode [ a: 1 ]");
+    let j = serde_json::to_string(&doc).unwrap();
+    let back: Doc = serde_json::from_str(&j).unwrap();
+    assert_eq!(back, doc);
+    assert_eq!(back.func("f").unwrap().desc.as_deref(), Some("d"));
 }

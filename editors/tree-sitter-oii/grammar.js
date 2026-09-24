@@ -15,10 +15,27 @@ module.exports = grammar({
 
   rules: {
     // doc first. tree-sitter starts at the first rule.
-    doc: ($) => seq(optional($.impt), repeat($.node)),
+    doc: ($) => seq(optional($.impt), repeat(choice($.func, $.node))),
 
     // impt goes first in the file. highlighter only; real check is Rust.
     impt: ($) => seq('impt', sepBy1(',', $._import_entry)),
+
+    // func is a named method with params and a block body.
+    // statements inside are handled loosely. real parse is Rust.
+    func: ($) => seq('fun', field('name', $.name), $.params, $.body),
+
+    params: ($) =>
+      seq(
+        '(',
+        repeat(
+          seq(
+            field('name', $.name),
+            optional(seq(choice(':', '='), $.value)),
+            optional(',')
+          )
+        ),
+        ')'
+      ),
 
     _import_entry: ($) => choice($.string, $.raw_string),
 

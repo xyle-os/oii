@@ -9,6 +9,9 @@ color brightblack "\\*/"
 # impt first
 color brightblue "\\bimpt\\b"
 
+# func and control keywords
+color brightblue "\\b(fun|desc|let|if|else|while|for|in|return)\\b"
+
 # bools, null
 color brightcyan "\\b(true|false|null)\\b"
 

@@ -13,7 +13,7 @@ use lsp_types::{
 use crate::diag::{Lang, Level};
 use crate::{ParseOptions, format_doc, parse_with};
 
-// stdio loop. blocks until shutdown.
+// stdio loop blocks until shutdown
 pub fn run() -> Result<(), Box<dyn Error + Sync + Send>> {
     let (conn, threads) = Connection::stdio();
     let caps = ServerCapabilities {
@@ -51,7 +51,7 @@ pub fn run() -> Result<(), Box<dyn Error + Sync + Send>> {
             }
         }
     }
-    // conn holds the writer sender. drop first or join hangs.
+    // conn holds the writer sender drop first or join hangs
     drop(conn);
     threads.join()?;
     Ok(())
@@ -79,7 +79,7 @@ fn on_request(docs: &mut HashMap<String, String>, req: Request, lang: Lang) -> O
             let p: HoverParams = serde_json::from_value(req.params).ok()?;
             let text = docs.get(p.text_document_position_params.text_document.uri.as_str())?;
             let word = word_at(text, p.text_document_position_params.position);
-            let md = hover_md(word.as_deref())?;
+            let md = hover_md(word.as_deref(), text)?;
             let h = Hover {
                 contents: HoverContents::Scalar(MarkedString::String(md)),
                 range: None,
@@ -128,7 +128,7 @@ fn diag_msg(uri: &Uri, text: &str, lang: Lang) -> Message {
         vars: HashMap::new(),
         lang,
         fix: false,
-        // editor has no vars. keep template, skip W001 noise.
+        // editor has no vars keep template, skip W001 noise
         keep_interp: true,
     };
     let out = parse_with(text, &opts);
@@ -165,7 +165,7 @@ fn diag_msg(uri: &Uri, text: &str, lang: Lang) -> Message {
     ))
 }
 
-// full-doc edit. errors mean no edit.
+// full-doc edit errors mean no edit
 fn format_edits(text: &str, lang: Lang) -> Option<Vec<TextEdit>> {
     let _ = lang;
     let opts = ParseOptions {
@@ -223,6 +223,48 @@ fn complete_items() -> Vec<CompletionItem> {
         "imports go first",
         Some("impt \"$0\","),
     );
+    add(
+        "fun",
+        CompletionItemKind::SNIPPET,
+        "func with desc",
+        Some("fun $1($2) [\n  desc: \"$3\",\n  $0\n]"),
+    );
+    add(
+        "desc",
+        CompletionItemKind::FIELD,
+        "func doc string",
+        Some("desc: \"$0\","),
+    );
+    add(
+        "let",
+        CompletionItemKind::KEYWORD,
+        "bind a name",
+        Some("let $1: $0"),
+    );
+    add(
+        "if",
+        CompletionItemKind::KEYWORD,
+        "conditional",
+        Some("if $1 [\n  $0\n]"),
+    );
+    add(
+        "while",
+        CompletionItemKind::KEYWORD,
+        "loop",
+        Some("while $1 [\n  $0\n]"),
+    );
+    add(
+        "for",
+        CompletionItemKind::KEYWORD,
+        "loop over a list",
+        Some("for $1 in $2 [\n  $0\n]"),
+    );
+    add(
+        "return",
+        CompletionItemKind::KEYWORD,
+        "return a value",
+        Some("return $0"),
+    );
     add("true", CompletionItemKind::VALUE, "bool", None);
     add("false", CompletionItemKind::VALUE, "bool", None);
     add("null", CompletionItemKind::VALUE, "null", None);
@@ -246,7 +288,7 @@ fn word_at(text: &str, pos: Position) -> Option<String> {
     let chars: Vec<char> = line.chars().collect();
     let mut i = pos.character as usize;
     if i > 0 && i == chars.len() {
-        i -= 1; // cursor past eol. step back.
+        i -= 1; // cursor past eol step back
     }
     let cur = chars.get(i)?;
     if !(cur.is_alphanumeric() || *cur == '_' || *cur == '#') {
@@ -263,16 +305,46 @@ fn word_at(text: &str, pos: Position) -> Option<String> {
     Some(chars[a..=b].iter().collect())
 }
 
-fn hover_md(word: Option<&str>) -> Option<String> {
+fn hover_md(word: Option<&str>, text: &str) -> Option<String> {
+    let word = word?;
+    // func names show their desc
+    if let Some(md) = func_hover(word, text) {
+        return Some(md);
+    }
     match word {
-        Some("impt") => Some("**impt** — imports go first.\n\n`impt \"a.oii\", \"b.oii\"`".into()),
-        Some("true") | Some("false") => Some("bool value".into()),
-        Some("null") => Some("null value".into()),
+        "impt" => Some("**impt** — imports go first.\n\n`impt \"a.oii\", \"b.oii\"`".into()),
+        "fun" => Some("**fun** — a named method with params and a body.\n\n`fun greet(name) [ desc: \"hi\" ]`".into()),
+        "desc" => Some("**desc** — func doc string. parser lifts it out".into()),
+        "let" => Some("**let** — binds a name in the current scope".into()),
+        "if" | "else" => Some("**if** — run a block when the bool is true".into()),
+        "while" => Some("**while** — loop while the bool is true".into()),
+        "for" => Some("**for** — loop over an array or map".into()),
+        "return" => Some("**return** — hand a value back from a func".into()),
+        "true" | "false" => Some("bool value".into()),
+        "null" => Some("null value".into()),
         _ => None,
     }
 }
 
-// keep RequestId import used across lsp-server versions
+fn func_hover(name: &str, text: &str) -> Option<String> {
+    let opts = ParseOptions {
+        vars: HashMap::new(),
+        lang: Lang::En,
+        fix: false,
+        keep_interp: true,
+    };
+    let out = parse_with(text, &opts);
+    let doc = out.doc?;
+    let f = doc.func(name)?;
+    let params: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
+    let head = format!("**fun {}({})**", f.name, params.join(", "));
+    match &f.desc {
+        Some(d) => Some(format!("{head} — {d}")),
+        None => Some(head),
+    }
+}
+
+// keep requestid import used across lsp-server versions
 #[allow(dead_code)]
 fn _use_id(id: RequestId) -> RequestId {
     id

@@ -1,0 +1,53 @@
+// Funcs. Run with:
+//   oii run examples/func.oii fact --arg n=5
+//   oii funcs examples/func.oii
+//   oii set examples/func.oii fact.desc "n factorial"
+
+fun fact(n) [
+  desc: "factorial of n"
+  let r: 1
+  while n > 1 [
+    r: r * n
+    n: n - 1
+  ]
+  return r
+]
+
+fun fib(n) [
+  desc: "nth fibonacci number"
+  if n < 2 [ return n ]
+  return fib(n - 1) + fib(n - 2)
+]
+
+fun greet(name, punct: "!") [
+  desc: "say hi"
+  return "hi " + name + punct
+]
+
+fun total(xs) [
+  desc: "sum a list"
+  let s: 0
+  for x in xs [ s: s + x ]
+  return s
+]
+
+fun adder(n) [
+  desc: "make an add n closure"
+  return fun(x) [ return x + n ]
+]
+
+fun apply(f, x) [
+  desc: "call a func value"
+  return f(x)
+]
+
+fun pair_sum(pair) [
+  desc: "destructure a pair"
+  let [a, b]: pair
+  return a + b
+]
+
+server [
+  host: 127.0.0.1   // edits keep this comment
+  port: 4377
+]

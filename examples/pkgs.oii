@@ -1,0 +1,23 @@
+// declarative package config. a manager adds entries with the edit api
+//   oii insert examples/pkgs.oii packages fastfetch -w
+//   oii insert examples/pkgs.oii config.registry aur -w
+//   oii rm examples/pkgs.oii packages.git
+
+fun packages() [
+  desc: "installed packages"
+  neovim
+  git
+]
+
+config [
+  registry: [
+    "main"
+    "extra"
+  ]
+]
+
+hooks [
+  post_install: [
+    "systemctl daemon-reload"
+  ]
+]

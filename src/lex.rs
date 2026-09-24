@@ -11,13 +11,37 @@ pub enum Kind {
     Bool(bool),
     Null,
     Impt,
+    Fun,
+    Let,
+    If,
+    Else,
+    While,
+    For,
+    In,
+    Return,
     LBracket,
     RBracket,
     LBrace,
     RBrace,
+    LParen,
+    RParen,
     Comma,
     Colon,
     Equals,
+    EqEq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    AmpAmp,
+    PipePipe,
+    Bang,
 }
 
 impl std::hash::Hash for Kind {
@@ -49,13 +73,37 @@ impl Kind {
             Kind::Bool(_) => with("布尔", "bool"),
             Kind::Null => "null".to_string(),
             Kind::Impt => "impt".to_string(),
+            Kind::Fun => "fun".to_string(),
+            Kind::Let => "let".to_string(),
+            Kind::If => "if".to_string(),
+            Kind::Else => "else".to_string(),
+            Kind::While => "while".to_string(),
+            Kind::For => "for".to_string(),
+            Kind::In => "in".to_string(),
+            Kind::Return => "return".to_string(),
             Kind::LBracket => "`[`".to_string(),
             Kind::RBracket => "`]`".to_string(),
             Kind::LBrace => "`{`".to_string(),
             Kind::RBrace => "`}`".to_string(),
+            Kind::LParen => "`(`".to_string(),
+            Kind::RParen => "`)`".to_string(),
             Kind::Comma => "`,`".to_string(),
             Kind::Colon => "`:`".to_string(),
             Kind::Equals => "`=`".to_string(),
+            Kind::EqEq => "`==`".to_string(),
+            Kind::Ne => "`!=`".to_string(),
+            Kind::Lt => "`<`".to_string(),
+            Kind::Le => "`<=`".to_string(),
+            Kind::Gt => "`>`".to_string(),
+            Kind::Ge => "`>=`".to_string(),
+            Kind::Plus => "`+`".to_string(),
+            Kind::Minus => "`-`".to_string(),
+            Kind::Star => "`*`".to_string(),
+            Kind::Slash => "`/`".to_string(),
+            Kind::Percent => "`%`".to_string(),
+            Kind::AmpAmp => "`&&`".to_string(),
+            Kind::PipePipe => "`||`".to_string(),
+            Kind::Bang => "`!`".to_string(),
         }
     }
 }
@@ -190,17 +238,9 @@ pub fn lex_with(
                     }
                 }
                 _ => {
-                    let start = lx.byte;
+                    // lone / is division in func bodies
+                    tokens.push((Kind::Slash, lx.byte));
                     lx.bump();
-                    diags.push(lx.err_hint(
-                        "E011",
-                        "字符 `/` 非法. 注释只有 // 或 /*",
-                        "bad `/`. comments are // or /* only",
-                        "只认 // 和 /*",
-                        "use // or /*",
-                        start,
-                        lx.byte,
-                    ));
                 }
             },
             '[' => {
@@ -235,7 +275,94 @@ pub fn lex_with(
                 lx.bump();
             }
             '=' => {
-                tokens.push((Kind::Equals, lx.byte));
+                // == is equality lone = is the attr separator
+                if lx.peek2() == Some('=') {
+                    tokens.push((Kind::EqEq, lx.byte));
+                    lx.bump();
+                    lx.bump();
+                } else {
+                    tokens.push((Kind::Equals, lx.byte));
+                    lx.bump();
+                }
+            }
+            '<' => {
+                let start = lx.byte;
+                lx.bump();
+                if lx.peek() == Some('=') {
+                    lx.bump();
+                    tokens.push((Kind::Le, start));
+                } else {
+                    tokens.push((Kind::Lt, start));
+                }
+            }
+            '>' => {
+                let start = lx.byte;
+                lx.bump();
+                if lx.peek() == Some('=') {
+                    lx.bump();
+                    tokens.push((Kind::Ge, start));
+                } else {
+                    tokens.push((Kind::Gt, start));
+                }
+            }
+            '!' => {
+                let start = lx.byte;
+                lx.bump();
+                if lx.peek() == Some('=') {
+                    lx.bump();
+                    tokens.push((Kind::Ne, start));
+                } else {
+                    tokens.push((Kind::Bang, start));
+                }
+            }
+            '&' => {
+                let start = lx.byte;
+                if lx.peek2() == Some('&') {
+                    lx.bump();
+                    lx.bump();
+                    tokens.push((Kind::AmpAmp, start));
+                } else {
+                    lx.bump();
+                    diags.push(lx.err(
+                        "E011",
+                        "字符 `&` 非法. 逻辑与写 &&",
+                        "bad `&`. write && for and",
+                        start,
+                        lx.byte,
+                    ));
+                }
+            }
+            '|' => {
+                let start = lx.byte;
+                if lx.peek2() == Some('|') {
+                    lx.bump();
+                    lx.bump();
+                    tokens.push((Kind::PipePipe, start));
+                } else {
+                    lx.bump();
+                    diags.push(lx.err(
+                        "E011",
+                        "字符 `|` 非法. 逻辑或写 ||",
+                        "bad `|`. write || for or",
+                        start,
+                        lx.byte,
+                    ));
+                }
+            }
+            '*' => {
+                tokens.push((Kind::Star, lx.byte));
+                lx.bump();
+            }
+            '%' => {
+                tokens.push((Kind::Percent, lx.byte));
+                lx.bump();
+            }
+            '(' => {
+                tokens.push((Kind::LParen, lx.byte));
+                lx.bump();
+            }
+            ')' => {
+                tokens.push((Kind::RParen, lx.byte));
                 lx.bump();
             }
             '"' => {
@@ -276,16 +403,10 @@ pub fn lex_with(
                 {
                     scan_word(&mut lx, &mut tokens);
                 } else {
-                    let start = lx.byte;
-                    let bad = lx.peek().unwrap_or('?');
+                    // lone + - are operators a+b still scans as one bare word
+                    let kind = if c == '+' { Kind::Plus } else { Kind::Minus };
+                    tokens.push((kind, lx.byte));
                     lx.bump();
-                    diags.push(lx.err(
-                        "E011",
-                        format!("非法字符 `{bad}`").as_str(),
-                        format!("bad char `{bad}`").as_str(),
-                        start,
-                        lx.byte,
-                    ));
                 }
             }
             c if c.is_alphabetic() || c == '_' => {
@@ -332,6 +453,14 @@ fn scan_word(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>) {
     }
     let kind = match buf.as_str() {
         "impt" => Kind::Impt,
+        "fun" => Kind::Fun,
+        "let" => Kind::Let,
+        "if" => Kind::If,
+        "else" => Kind::Else,
+        "while" => Kind::While,
+        "for" => Kind::For,
+        "in" => Kind::In,
+        "return" => Kind::Return,
         "true" => Kind::Bool(true),
         "false" => Kind::Bool(false),
         "null" => Kind::Null,
@@ -398,7 +527,7 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
     }
 
     if bare.is_empty() {
-        // not a number. rewind so caller rescans as word.
+        // not a number rewind so caller rescans as word
         lx.byte = start;
         lx.pos = start_pos;
         return false;
@@ -434,7 +563,7 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
             is_float = true;
             lx.bump();
         } else {
-            // e.g. version 1.foo. leave whole thing as bare.
+            // e.g version 1.foo leave whole thing as bare
             lx.byte = start;
             lx.pos = start_pos;
             return false;
@@ -458,7 +587,7 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
             }
         }
         if !has || !underscores_ok(&exp) {
-            // bad exp like 1e. rewind, let word scan own it.
+            // bad exp like 1e rewind, let word scan own it
             lx.byte = start;
             lx.pos = start_pos;
             return false;
@@ -470,7 +599,7 @@ fn scan_number(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
         return false;
     }
 
-    // trailing garbage like 123abc is a bare word, not a number.
+    // trailing garbage like 123abc is a bare word, not a number
     if let Some(c) = lx.peek() {
         if !is_delim(c) {
             lx.byte = start;
@@ -567,7 +696,25 @@ fn is_delim(c: char) -> bool {
     c.is_whitespace()
         || matches!(
             c,
-            ',' | '[' | ']' | '{' | '}' | ':' | '=' | '"' | '#' | '/' | '\''
+            ',' | '['
+                | ']'
+                | '{'
+                | '}'
+                | ':'
+                | '='
+                | '"'
+                | '#'
+                | '/'
+                | '\''
+                | '('
+                | ')'
+                | '<'
+                | '>'
+                | '!'
+                | '&'
+                | '|'
+                | '*'
+                | '%'
         )
 }
 
@@ -747,7 +894,7 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                             loc_of(lx.src, interp_start, lx.byte),
                         ));
                     } else if lx.keep_interp {
-                        // fmt path. leave template alone.
+                        // fmt path leave template alone
                         buf.push('{');
                         buf.push_str(&name);
                         buf.push('}');
