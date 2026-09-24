@@ -11,6 +11,8 @@
   (list
    '("//.*$" . font-lock-comment-face)
    '("/\\*.*\\*/" . font-lock-comment-face)
+   '("/-" . font-lock-comment-face)
+   '("([A-Za-z_][A-Za-z0-9_.-]*)" . font-lock-type-face)
    '("\\bimpt\\b" . font-lock-keyword-face)
    '("\\b\\(fun\\|desc\\|let\\|if\\|else\\|while\\|for\\|in\\|return\\)\\b" . font-lock-keyword-face)
    '("\\b\\(true\\|false\\|null\\)\\b" . font-lock-constant-face)

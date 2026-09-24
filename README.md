@@ -46,6 +46,44 @@ Values:
 
 Only double quoted strings interpolate: `"hello {name}"`. Pass values with `--var name=value`, `--env`, or `ParseOptions::vars` from Rust. Unknown names interpolate to empty and emit `W001`.
 
+## 1.1 syntax
+
+Slashdash `/-` comments out the next node, attribute, or argument. Disabled items stay in the tree for edits but are skipped by reads and JSON.
+
+```oii
+server [
+  host: 127.0.0.1
+  /-port: 4377
+  /-legacy []
+]
+```
+
+Type annotations `(type)` on a node or a value. The parser keeps the name.
+
+```oii
+(u8)count 7
+created: (date)"2021-02-03"
+```
+
+Strings. Raw strings take any number of `#` so the content can hold `"#`. Triple quotes give a dedented multiline string, raw or cooked.
+
+```oii
+regex: ##"$\d+"##
+msg: """
+  hello
+  world
+  """
+```
+
+Special floats `#inf`, `#-inf`, `#nan`. A backslash continues a line. A bare name that is a keyword can be quoted.
+
+```oii
+scale: #inf
+matrix: [1 2 3 \
+         4 5 6]
+"fun": 1
+```
+
 ## Funcs
 
 A func is a named method. Name, params, optional `desc`, bracket body. `desc` is lifted out of the body by the parser and exposed as `Func::desc`.
@@ -137,6 +175,8 @@ The full edit surface:
 - `insert(target, raw)`, `insert_before(target, anchor, raw)`
 - `add_node(parent, src)`, `add_func(src)`
 - `set_index(path, i, value)`, `insert_index(path, i, raw)`, `remove_index(path, i)`
+- `set_enabled(path, on)`, `toggle(path)` slashdash on or off
+- `set_ty(path, ty)`, `rename(path, name)`, `sort_attrs(path)`
 - `remove(path)` for a func, node, attr, func statement, or array element
 - `replace(start, end, raw)` raw byte range escape hatch
 - `transaction(|f| ...)` all or nothing batch
@@ -183,6 +223,10 @@ oii get <file> <path>  read one value
 oii set <file> <path> <value>  edit one value, -w writes back
 oii insert <file> <target> <line>  add a func line, node line, or array element, --before for position, -w writes back
 oii rm <file> <path>   remove a func node attr func line or array element, -w writes back
+oii toggle <file> <path>  slashdash on or off, --on --off, -w writes back
+oii set-ty <file> <path> <ty>  set or clear a (type) annotation, - clears
+oii rename <file> <path> <name>  rename a node or attr key
+oii sort <file> <path>  sort a node's single line attrs by key
 oii set-index <file> <path> <i> <value>  replace an array element
 oii insert-index <file> <path> <i> <line>  insert an array element
 oii rm-index <file> <path> <i>  remove an array element
@@ -257,6 +301,17 @@ Things that bite:
 - `{` and `}` mean nothing outside double quoted strings. They error.
 - `--fix` only appends missing `]` at EOF. A stray `]` is always an error.
 - In func bodies write `n - 1` with spaces. `n-1` is one bare word, not subtraction.
+
+## Changes in 1.1.0
+
+All additive. Old files parse unchanged.
+
+- slashdash `/-`, type annotations `(type)`, `#inf #-inf #nan`, line continuation `\`
+- raw strings take any number of `#`, triple quoted multiline strings are dedented
+- quoted identifiers let keywords be data names
+- `Node` gains `enabled` and `ty`. `Attribute` gains `enabled`. `Value` gains `Typed` and `Disabled`
+- edit api: `set_enabled`, `toggle`, `set_ty`, `rename`, `sort_attrs`
+- formatter always writes raw strings with hashes so they stay raw
 
 ## Breaking changes in 1.0.0
 

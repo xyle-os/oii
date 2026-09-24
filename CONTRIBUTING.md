@@ -17,8 +17,6 @@ Patches welcome. Keep them small and boring.
 - New behavior needs a test in `tests/oii.rs`. No test, no merge.
 - Keep diagnostics short and actionable. Match existing tone.
 - `zh` and `en` messages get updated together. Never leave one stale.
-- Code comments are short lowercase English with no trailing period. Linus style. Diagnostic strings keep their punctuation.
-- New public API and JSON shape changes are breaking. Note them in the PR and in the README breaking section.
 
 ## AI assisted code
 

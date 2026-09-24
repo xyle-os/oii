@@ -4,7 +4,7 @@ resolver = "3"
 
 [package]
 name = "oii"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 description = "Config language for Xyle. Brackets for scope. Parser, formatter, roundtrip edits, funcs"
 authors = ["Celvra"]

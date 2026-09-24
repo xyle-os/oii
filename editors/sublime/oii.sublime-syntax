@@ -7,13 +7,39 @@ scope: source.oii
 contexts:
   main:
     - include: comments
+    - include: slashdash
     - include: impt
+    - include: triple-string
     - include: raw-string
     - include: double-string
     - include: numbers
     - include: keywords
+    - include: type-ann
     - include: attr
     - include: punctuation
+  slashdash:
+    - match: /-
+      scope: keyword.operator.slashdash.oii
+  type-ann:
+    - match: '\([A-Za-z_][\w.\-]*\)'
+      scope: entity.name.type.oii
+  triple-string:
+    - match: '#+"""'
+      scope: punctuation.definition.string.begin.oii
+      push: in-triple-raw
+    - match: '"""'
+      scope: punctuation.definition.string.begin.oii
+      push: in-triple
+  in-triple-raw:
+    - meta_scope: string.quoted.triple.raw.oii
+    - match: '"""#+'
+      scope: punctuation.definition.string.end.oii
+      pop: true
+  in-triple:
+    - meta_scope: string.quoted.triple.oii
+    - match: '"""'
+      scope: punctuation.definition.string.end.oii
+      pop: true
   comments:
     - match: ///.*$
       scope: comment.line.documentation.oii
@@ -62,6 +88,8 @@ contexts:
       scope: punctuation.definition.string.end.oii
       pop: true
   numbers:
+    - match: '#-?inf|#nan'
+      scope: constant.numeric.float.oii
     - match: '(?<![\w.])([+-]?0[xX][0-9A-Fa-f_]+)'
       scope: constant.numeric.hex.oii
     - match: '(?<![\w.])([+-]?0[oO][0-7_]+)'

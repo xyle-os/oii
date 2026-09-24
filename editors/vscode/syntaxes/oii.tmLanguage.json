@@ -5,12 +5,15 @@
   "fileTypes": ["oii"],
   "patterns": [
     { "include": "#comments" },
+    { "include": "#slashdash" },
     { "include": "#impt" },
+    { "include": "#triple-string" },
     { "include": "#raw-string" },
     { "include": "#double-string" },
     { "include": "#numbers" },
     { "include": "#keywords" },
     { "include": "#func" },
+    { "include": "#type-ann" },
     { "include": "#attr" },
     { "include": "#punctuation" },
     { "include": "#operators" },
@@ -34,11 +37,41 @@
         }
       ]
     },
+    "slashdash": {
+      "patterns": [
+        {
+          "name": "keyword.operator.slashdash.oii",
+          "match": "/-"
+        }
+      ]
+    },
+    "type-ann": {
+      "patterns": [
+        {
+          "name": "entity.name.type.oii",
+          "match": "\\([A-Za-z_][\\w.\\-]*\\)"
+        }
+      ]
+    },
     "impt": {
       "patterns": [
         {
           "name": "keyword.control.import.oii",
           "match": "(?<!\\w)impt(?!\\w)"
+        }
+      ]
+    },
+    "triple-string": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.raw.oii",
+          "begin": "#+\"\"\"",
+          "end": "\"\"\"#+"
+        },
+        {
+          "name": "string.quoted.triple.oii",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
         }
       ]
     },
@@ -117,6 +150,10 @@
     },
     "numbers": {
       "patterns": [
+        {
+          "name": "constant.numeric.float.oii",
+          "match": "#-?inf|#nan"
+        },
         {
           "name": "constant.numeric.hex.oii",
           "match": "(?<![\\w.])([+-]?0[xX][0-9A-Fa-f_]+)"

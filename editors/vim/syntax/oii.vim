@@ -9,8 +9,14 @@ syntax match oiiLineComment '//.*$'
 syntax match oiiDocComment '///.*$'
 syntax region oiiBlockComment start='/\*' end='\*/'
 
+" slashdash comments out the next item
+syntax match oiiSlashDash '/-'
+
 " impt goes first
 syntax keyword oiiImpt impt
+
+" type annotation (ty)
+syntax match oiiTypeAnn '([A-Za-z_][A-Za-z0-9_.-]*)'
 
 " func and control keywords
 syntax keyword oiiFun fun desc
@@ -20,8 +26,12 @@ syntax keyword oiiControl let if else while for in return
 syntax keyword oiiBool true false
 syntax keyword oiiNull null
 
+" multiline strings
+syntax region oiiRawTriple matchgroup=oiiRawDelim start='#"""' end='"""#'
+syntax region oiiTriple matchgroup=oiiStrDelim start='"""' end='"""'
+
 " raw string is verbatim, no escapes inside
-syntax region oiiRaw matchgroup=oiiRawDelim start='#"' end='"#'
+syntax region oiiRaw matchgroup=oiiRawDelim start='#"\|##"\|###"' end='"#\|"##\|"###'
 
 " cooked string with escapes and {var}
 syntax region oiiString matchgroup=oiiStrDelim start='"' end='"' contains=oiiEscape,oiiInterp,oiiBadEscape
@@ -44,6 +54,10 @@ highlight default link oiiLineComment Comment
 highlight default link oiiDocComment Comment
 highlight default link oiiBlockComment Comment
 highlight default link oiiImpt Keyword
+highlight default link oiiSlashDash Comment
+highlight default link oiiTypeAnn Type
+highlight default link oiiRawTriple String
+highlight default link oiiTriple String
 highlight default link oiiFun Keyword
 highlight default link oiiControl Statement
 highlight default link oiiBool Boolean

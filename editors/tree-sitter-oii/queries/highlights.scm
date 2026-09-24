@@ -3,6 +3,10 @@
 ; so interpolation has no separate capture here.
 (comment) @comment
 (impt) @keyword
+("/-") @keyword.operator
+(type_ann (name) @type) @type
+(triple_string) @string
+(raw_triple_string) @string.special
 ("fun") @keyword.function
 ("let") @keyword
 ("if") @keyword

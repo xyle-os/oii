@@ -811,5 +811,7 @@ pub fn to_display(v: &Value) -> String {
         Value::Null => "null".to_string(),
         Value::Array(_) | Value::Map(_) => crate::fmt::fmt_value(v),
         Value::Func(_) => "<func>".to_string(),
+        Value::Typed { value, .. } => to_display(value),
+        Value::Disabled(v) => to_display(v),
     }
 }

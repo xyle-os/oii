@@ -49,7 +49,7 @@ impl FromValue for Value {
 
 impl FromValue for String {
     fn from_value(v: &Value) -> Result<Self, DecodeError> {
-        match v {
+        match v.inner() {
             Value::Bare(s) | Value::Str(s) | Value::RawStr(s) => Ok(s.clone()),
             other => Err(DecodeError::at(
                 "",
@@ -61,7 +61,7 @@ impl FromValue for String {
 
 impl FromValue for i64 {
     fn from_value(v: &Value) -> Result<Self, DecodeError> {
-        match v {
+        match v.inner() {
             Value::Int(i) => Ok(*i),
             other => Err(DecodeError::at(
                 "",
@@ -73,7 +73,7 @@ impl FromValue for i64 {
 
 impl FromValue for f64 {
     fn from_value(v: &Value) -> Result<Self, DecodeError> {
-        match v {
+        match v.inner() {
             Value::Float(f) => Ok(*f),
             Value::Int(i) => Ok(*i as f64),
             other => Err(DecodeError::at(
@@ -86,7 +86,7 @@ impl FromValue for f64 {
 
 impl FromValue for bool {
     fn from_value(v: &Value) -> Result<Self, DecodeError> {
-        match v {
+        match v.inner() {
             Value::Bool(b) => Ok(*b),
             other => Err(DecodeError::at(
                 "",
@@ -108,7 +108,7 @@ impl<T: FromValue> FromValue for Option<T> {
 
 impl<T: FromValue> FromValue for Vec<T> {
     fn from_value(v: &Value) -> Result<Self, DecodeError> {
-        match v {
+        match v.inner() {
             Value::Array(items) => {
                 let mut out = Vec::with_capacity(items.len());
                 for (i, it) in items.iter().enumerate() {
@@ -129,7 +129,7 @@ impl<T: FromValue> FromValue for Vec<T> {
 
 impl<T: FromValue> FromValue for HashMap<String, T> {
     fn from_value(v: &Value) -> Result<Self, DecodeError> {
-        match v {
+        match v.inner() {
             Value::Map(items) => {
                 let mut out = HashMap::new();
                 for (k, val) in items {
@@ -192,10 +192,14 @@ impl FromNode for Value {
         }
         let mut map = Vec::new();
         for a in &n.attributes {
-            map.push((a.key.clone(), a.value.clone()));
+            if a.enabled {
+                map.push((a.key.clone(), a.value.clone()));
+            }
         }
         for c in &n.children {
-            map.push((c.name.clone(), Value::from_node(c)?));
+            if c.enabled {
+                map.push((c.name.clone(), Value::from_node(c)?));
+            }
         }
         Ok(Value::Map(map))
     }

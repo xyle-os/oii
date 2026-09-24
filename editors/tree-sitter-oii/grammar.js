@@ -39,24 +39,31 @@ module.exports = grammar({
 
     _import_entry: ($) => choice($.string, $.raw_string),
 
+    // optional /- disables the item. optional (type) annotation
     node: ($) =>
       seq(
+        optional('/-'),
+        optional($.type_ann),
         field('name', $.name),
         // Bare args only. Arrays live in attr values.
         field('args', repeat($._scalar)),
         field('body', optional($.body))
       ),
 
-    body: ($) => seq('[', repeat(seq(choice($.attr, $.node), optional(','))), ']'),
+    type_ann: ($) => seq('(', $.name, ')'),
+
+    body: ($) =>
+      seq('[', repeat(seq(optional('/-'), choice($.attr, $.node), optional(','))), ']'),
 
     attr: ($) =>
       seq(
+        optional('/-'),
         field('key', $.name),
         field('sep', choice(':', '=')),
         field('value', $.value)
       ),
 
-    value: ($) => choice($._scalar, $.array),
+    value: ($) => choice(seq(optional($.type_ann), $._scalar), $.array),
 
     array: ($) => seq('[', repeat(seq($.value, optional(','))), ']'),
 
@@ -64,6 +71,8 @@ module.exports = grammar({
       choice(
         $.string,
         $.raw_string,
+        $.triple_string,
+        $.raw_triple_string,
         $.int,
         $.float,
         $.bool,
@@ -100,6 +109,10 @@ module.exports = grammar({
 
     // Verbatim. No escapes, no interpolation.
     raw_string: (_) => token(seq('#"', /([^"]|"[^#])*"?/, '"#')),
+
+    // Multiline cooked and raw strings.
+    triple_string: (_) => token(seq('"""', /([^"]|"[^"])*/, '"""')),
+    raw_triple_string: (_) => token(seq(/#+"""/, /([^"]|"[^"])*/, /"""#+/)),
 
     int: (_) =>
       choice(

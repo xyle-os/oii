@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- Highlight slashdash `/-`, type annotations `(type)`, triple quoted strings.
+- Special floats `#inf #-inf #nan`.
+
 ## 1.0.0
 
 - Highlight `fun`, `desc`, `let`, `if`, `else`, `while`, `for`, `in`, `return`.

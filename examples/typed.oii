@@ -1,0 +1,24 @@
+// 1.1 syntax. types slashdash strings
+//   oii toggle examples/typed.oii package.legacy
+//   oii set-ty examples/typed.oii build.time ms
+
+package [
+  name: (str)"demo"
+  version: (semver)"1.2.3"
+  /-legacy: true
+  "fun": false
+]
+
+build [
+  time: #inf
+  retries: 3
+  script: #"""
+    echo "hi"
+    """#
+  note: """
+    dedented
+      text
+    """
+  matrix: [1 2 3 \
+           4 5 6]
+]

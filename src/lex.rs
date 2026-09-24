@@ -38,6 +38,7 @@ pub enum Kind {
     Minus,
     Star,
     Slash,
+    SlashDash,
     Percent,
     AmpAmp,
     PipePipe,
@@ -100,6 +101,7 @@ impl Kind {
             Kind::Minus => "`-`".to_string(),
             Kind::Star => "`*`".to_string(),
             Kind::Slash => "`/`".to_string(),
+            Kind::SlashDash => "`/-`".to_string(),
             Kind::Percent => "`%`".to_string(),
             Kind::AmpAmp => "`&&`".to_string(),
             Kind::PipePipe => "`||`".to_string(),
@@ -142,6 +144,10 @@ impl<'a> Lexer<'a> {
 
     fn peek2(&self) -> Option<char> {
         self.chars.get(self.pos + 1).copied()
+    }
+
+    fn peek_n(&self, n: usize) -> Option<char> {
+        self.chars.get(self.pos + n).copied()
     }
 
     fn bump(&mut self) -> Option<char> {
@@ -236,6 +242,13 @@ pub fn lex_with(
                             lx.byte,
                         ));
                     }
+                }
+                Some('-') => {
+                    // /- slashdash comments out the next item
+                    let start = lx.byte;
+                    lx.bump();
+                    lx.bump();
+                    tokens.push((Kind::SlashDash, start));
                 }
                 _ => {
                     // lone / is division in func bodies
@@ -366,22 +379,33 @@ pub fn lex_with(
                 lx.bump();
             }
             '"' => {
-                scan_string(&mut lx, &mut tokens, &mut diags);
-            }
-            '#' => {
-                let start = lx.byte;
-                if lx.peek2() == Some('"') {
-                    scan_raw_string(&mut lx, &mut tokens, &mut diags);
+                if is_triple(&lx) {
+                    scan_cooked(&mut lx, &mut tokens, &mut diags, true);
                 } else {
+                    scan_string(&mut lx, &mut tokens, &mut diags);
+                }
+            }
+            '\\' => {
+                // line continuation. backslash then spaces then newline
+                let start = lx.byte;
+                lx.bump();
+                while matches!(lx.peek(), Some(' ') | Some('\t') | Some('\r')) {
                     lx.bump();
+                }
+                if lx.peek() == Some('\n') {
+                    lx.bump();
+                } else {
                     diags.push(lx.err(
                         "E011",
-                        "字符 `#` 非法. 原始字符串是 #\" 开头 \"# 结尾",
-                        "bad `#`. raw string is #\" to \"#",
+                        "`\\` 只能续行. 后面要紧跟换行",
+                        "`\\` only continues a line. newline must follow",
                         start,
                         lx.byte,
                     ));
                 }
+            }
+            '#' => {
+                scan_hash(&mut lx, &mut tokens, &mut diags);
             }
             '0'..='9' | '.' => {
                 if !scan_number(&mut lx, &mut tokens, &mut diags) {
@@ -723,9 +747,31 @@ fn is_float_delim(c: char) -> bool {
 }
 
 fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<Diag>) {
+    scan_cooked(lx, tokens, diags, false);
+}
+
+fn scan_cooked(
+    lx: &mut Lexer,
+    tokens: &mut Vec<(Kind, usize)>,
+    diags: &mut Vec<Diag>,
+    multiline: bool,
+) {
     let start = lx.byte;
-    lx.bump();
+    if multiline {
+        lx.bump();
+        lx.bump();
+        lx.bump();
+        if lx.peek() == Some('\r') {
+            lx.bump();
+        }
+        if lx.peek() == Some('\n') {
+            lx.bump();
+        }
+    } else {
+        lx.bump();
+    }
     let mut buf = String::new();
+    let mut close_byte = lx.byte;
     loop {
         let c = match lx.peek() {
             Some(c) => c,
@@ -742,10 +788,22 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
                 break;
             }
         };
-        match c {
-            '"' => {
+        if multiline {
+            if c == '"' && lx.peek2() == Some('"') && lx.peek_n(2) == Some('"') {
+                close_byte = lx.byte;
+                lx.bump();
+                lx.bump();
                 lx.bump();
                 break;
+            }
+        } else if c == '"' {
+            lx.bump();
+            break;
+        }
+        match c {
+            '\n' if multiline => {
+                buf.push('\n');
+                lx.bump();
             }
             '\n' => {
                 diags.push(Diag::error_hint(
@@ -929,18 +987,90 @@ fn scan_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<
             }
         }
     }
+    if multiline {
+        let indent = closing_indent(lx.src, close_byte);
+        buf = dedent(&buf, &indent);
+    }
     tokens.push((Kind::Str(buf), start));
 }
 
-fn scan_raw_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<Diag>) {
+// true when a """ starts a multiline string. the newline must follow
+fn is_triple(lx: &Lexer) -> bool {
+    lx.peek() == Some('"')
+        && lx.peek2() == Some('"')
+        && lx.peek_n(2) == Some('"')
+        && matches!(lx.peek_n(3), Some('\n') | Some('\r'))
+}
+
+// # then hashes. raw string, multiline raw, or #inf #-inf #nan
+fn scan_hash(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut Vec<Diag>) {
     let start = lx.byte;
-    lx.bump();
-    lx.bump();
+    let mut hashes = 0usize;
+    while lx.peek() == Some('#') {
+        lx.bump();
+        hashes += 1;
+    }
+    if lx.peek() == Some('"') {
+        if is_triple(lx) {
+            scan_raw(lx, tokens, diags, hashes, true);
+        } else {
+            scan_raw(lx, tokens, diags, hashes, false);
+        }
+        return;
+    }
+    let wstart = lx.byte;
+    if lx.peek() == Some('-') {
+        lx.bump();
+    }
+    while matches!(lx.peek(), Some(c) if c.is_ascii_alphabetic()) {
+        lx.bump();
+    }
+    let word: String = lx.src[wstart..lx.byte].to_string();
+    match word.as_str() {
+        "inf" => tokens.push((Kind::Float(f64::INFINITY), start)),
+        "-inf" => tokens.push((Kind::Float(f64::NEG_INFINITY), start)),
+        "nan" => tokens.push((Kind::Float(f64::NAN), start)),
+        _ => diags.push(lx.err(
+            "E011",
+            "`#` 只能开头原始串或 #inf #-inf #nan",
+            "`#` only starts a raw string or #inf #-inf #nan",
+            start,
+            lx.byte,
+        )),
+    }
+}
+
+fn scan_raw(
+    lx: &mut Lexer,
+    tokens: &mut Vec<(Kind, usize)>,
+    diags: &mut Vec<Diag>,
+    hashes: usize,
+    multiline: bool,
+) {
+    let start = lx.byte;
+    let hash_str: String = std::iter::repeat('#').take(hashes).collect();
+    if multiline {
+        lx.bump();
+        lx.bump();
+        lx.bump();
+        if lx.peek() == Some('\r') {
+            lx.bump();
+        }
+        if lx.peek() == Some('\n') {
+            lx.bump();
+        }
+    } else {
+        lx.bump();
+    }
+    let close = format!("\"{hash_str}");
     let mut buf = String::new();
+    let mut close_byte = lx.byte;
     loop {
-        if lx.peek() == Some('"') && lx.peek2() == Some('#') {
-            lx.bump();
-            lx.bump();
+        if lx.src[lx.byte..].starts_with(&close) {
+            close_byte = lx.byte;
+            for _ in 0..close.len() {
+                lx.bump();
+            }
             break;
         }
         match lx.peek() {
@@ -956,11 +1086,48 @@ fn scan_raw_string(lx: &mut Lexer, tokens: &mut Vec<(Kind, usize)>, diags: &mut 
                     "unclosed raw string. missing \"#",
                     Some("原始字符串是 #\" 开头 \"# 结尾"),
                     Some("raw string is #\" to \"#"),
-                    loc_of(lx.src, start, start + 2),
+                    loc_of(lx.src, start, start + 1 + hashes),
                 ));
                 break;
             }
         }
     }
+    if multiline {
+        let indent = closing_indent(lx.src, close_byte);
+        buf = dedent(&buf, &indent);
+    }
     tokens.push((Kind::RawStr(buf), start));
+}
+
+// leading whitespace of the line that holds the closing delimiter
+fn closing_indent(src: &str, close_byte: usize) -> String {
+    let ls = src[..close_byte.min(src.len())]
+        .rfind('\n')
+        .map(|p| p + 1)
+        .unwrap_or(0);
+    src[ls..close_byte.min(src.len())]
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect()
+}
+
+// strip the closing indent from every line and drop the trailing blank one
+fn dedent(content: &str, indent: &str) -> String {
+    let mut lines: Vec<&str> = content.split('\n').collect();
+    if let Some(last) = lines.last() {
+        if last.trim().is_empty() {
+            lines.pop();
+        }
+    }
+    let out: Vec<String> = lines
+        .into_iter()
+        .map(|l| {
+            if !indent.is_empty() && l.starts_with(indent) {
+                l[indent.len()..].to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    out.join("\n")
 }

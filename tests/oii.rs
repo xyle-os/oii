@@ -484,8 +484,11 @@ fn fmt_raw_with_close_delim_survives() {
             attributes: vec![oii::ast::Attribute {
                 key: "r".into(),
                 value: Value::RawStr("a\"#b {v}".into()),
+                enabled: true,
             }],
             children: vec![],
+            enabled: true,
+            ty: None,
         }],
         funcs: vec![],
     };
@@ -535,6 +538,101 @@ fn bare_node_swallow_warns() {
     // same line args stay quiet
     let out = parse_with("foo bar []", &opts(&[]));
     assert!(!out.diagnostics.iter().any(|d| d.code == "W003"));
+}
+
+#[test]
+fn slashdash_disables_items() {
+    let doc = ok("root [\n  live: 1\n  /-dead: 2\n  /-gone []\n  keep: 3\n]");
+    let n = &doc.nodes[0];
+    assert_eq!(n.get("live"), Some(&Value::Int(1)));
+    assert_eq!(n.get("keep"), Some(&Value::Int(3)));
+    // disabled attrs are skipped by get
+    assert!(n.get("dead").is_none());
+    assert!(n.get_node("gone").is_none());
+    // but they are still in the ast for edits
+    assert!(n.attributes.iter().any(|a| a.key == "dead" && !a.enabled));
+    assert!(n.children.iter().any(|c| c.name == "gone" && !c.enabled));
+}
+
+#[test]
+fn type_annotations() {
+    let doc = ok("(author)person [\n  name: (str)\"Alex\"\n  age: (u8)7\n]");
+    let n = &doc.nodes[0];
+    assert_eq!(n.ty.as_deref(), Some("author"));
+    assert_eq!(n.get("name").and_then(Value::as_str), Some("Alex"));
+    assert_eq!(n.get("name").unwrap().ty(), Some("str"));
+    assert_eq!(n.get("age").and_then(Value::as_int), Some(7));
+}
+
+#[test]
+fn quoted_identifiers() {
+    let doc = ok("\"fun\" [\n  \"let\": 1\n]");
+    let n = doc.node("fun").unwrap();
+    assert_eq!(n.get("let"), Some(&Value::Int(1)));
+}
+
+#[test]
+fn multiline_and_raw_strings() {
+    let doc = ok(
+        "a [\n  m: \"\"\"\n    hello\n      indented\n    world\n    \"\"\"\n  r: ##\"has \"# inside\"##\n]",
+    );
+    let n = &doc.nodes[0];
+    assert_eq!(
+        n.get("m").and_then(Value::as_str),
+        Some("hello\n  indented\nworld")
+    );
+    assert_eq!(n.get("r").and_then(Value::as_str), Some("has \"# inside"));
+}
+
+#[test]
+fn inf_nan_and_continuation() {
+    let doc = ok("a [\n  i: #inf\n  n: #-inf\n  z: #nan\n  xs: [1, \\\n       2]\n]");
+    let n = &doc.nodes[0];
+    assert_eq!(n.get("i").and_then(Value::as_float), Some(f64::INFINITY));
+    assert_eq!(
+        n.get("n").and_then(Value::as_float),
+        Some(f64::NEG_INFINITY)
+    );
+    assert!(n.get("z").and_then(Value::as_float).unwrap().is_nan());
+    assert_eq!(n.get("xs").and_then(Value::as_array).unwrap().len(), 2);
+}
+
+#[test]
+fn fmt_new_syntax_roundtrip() {
+    let src = "(u8)root [\n  \"fun\": 1,\n  /-dead: 2,\n  live: (date)\"2021-02-03\",\n  raw: ##\"a \"# b\"##,\n  inf: #inf,\n  full: \"hi\\nthere\",\n]";
+    let d1 = ok(src);
+    let f1 = oii::format_doc(&d1);
+    assert_eq!(parse(&f1).unwrap(), d1, "fmt not stable: {f1}");
+    let f2 = oii::format_doc(&parse(&f1).unwrap());
+    assert_eq!(f1, f2);
+}
+
+#[test]
+fn edit_toggle_ty_rename_sort() {
+    let src = "root [\n  b: 2\n  a: 1\n  child [\n    x: 1\n  ]\n]\n";
+    let mut f = oii::DocFile::parse(src).unwrap();
+    // toggle off then on returns to the exact original
+    f.toggle("root.child").unwrap();
+    assert!(f.text().contains("/-child"), "{}", f.text());
+    f.toggle("root.child").unwrap();
+    assert_eq!(f.text(), src);
+    // disable an attr
+    f.toggle("root.b").unwrap();
+    assert!(f.text().contains("/-b: 2"), "{}", f.text());
+    // type annotation set and clear
+    f.set_ty("root.a", Some("u8")).unwrap();
+    assert!(f.text().contains("(u8)1"), "{}", f.text());
+    f.set_ty("root.a", None).unwrap();
+    assert!(!f.text().contains("(u8)"), "{}", f.text());
+    // rename
+    f.rename("root.child", "renamed").unwrap();
+    assert!(f.text().contains("renamed ["), "{}", f.text());
+    // sort attrs
+    f.sort_attrs("root").unwrap();
+    let a = f.text().find("a: 1").unwrap();
+    let b = f.text().find("/-b: 2").unwrap();
+    assert!(a < b || !f.text().contains("b: 2"), "{}", f.text());
+    assert!(oii::parse(f.text()).is_ok());
 }
 
 #[test]

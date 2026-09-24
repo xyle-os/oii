@@ -164,10 +164,14 @@ pub fn doc_to_object(doc: &Doc) -> serde_json::Value {
 fn node_as_object(n: &Node) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for a in &n.attributes {
-        map.insert(a.key.clone(), value_json(&a.value));
+        if a.enabled {
+            map.insert(a.key.clone(), value_json(&a.value));
+        }
     }
     for c in &n.children {
-        map.insert(c.name.clone(), node_as_object(c));
+        if c.enabled {
+            map.insert(c.name.clone(), node_as_object(c));
+        }
     }
     if !n.args.is_empty() {
         map.insert(
@@ -182,7 +186,9 @@ fn node_as_object(n: &Node) -> serde_json::Value {
 fn node_json(n: &Node) -> serde_json::Value {
     let mut attrs = serde_json::Map::new();
     for a in &n.attributes {
-        attrs.insert(a.key.clone(), value_json(&a.value));
+        if a.enabled {
+            attrs.insert(a.key.clone(), value_json(&a.value));
+        }
     }
     serde_json::json!({
         "name": n.name,
@@ -212,6 +218,8 @@ pub fn value_json(v: &Value) -> serde_json::Value {
         }
         // func has no json form
         Value::Func(_) => serde_json::Value::Null,
+        Value::Typed { value, .. } => value_json(value),
+        Value::Disabled(v) => value_json(v),
     }
 }
 

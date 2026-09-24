@@ -132,6 +132,56 @@ enum Cmd {
         #[arg(short, long)]
         write: bool,
     },
+    /// slashdash a node or attr. --on to enable --off to disable
+    Toggle {
+        /// file path
+        file: String,
+        /// node or attr dot path
+        path: String,
+        /// force disable instead of toggling
+        #[arg(long)]
+        off: bool,
+        /// force enable instead of toggling
+        #[arg(long)]
+        on: bool,
+        /// write back to file
+        #[arg(short, long)]
+        write: bool,
+    },
+    /// set or clear a (type) annotation
+    SetTy {
+        /// file path
+        file: String,
+        /// node or attr dot path
+        path: String,
+        /// type name. - clears it
+        ty: String,
+        /// write back to file
+        #[arg(short, long)]
+        write: bool,
+    },
+    /// rename a node or attr key
+    Rename {
+        /// file path
+        file: String,
+        /// node or attr dot path
+        path: String,
+        /// new name
+        name: String,
+        /// write back to file
+        #[arg(short, long)]
+        write: bool,
+    },
+    /// sort a node's single line attrs by key
+    Sort {
+        /// file path
+        file: String,
+        /// node dot path
+        path: String,
+        /// write back to file
+        #[arg(short, long)]
+        write: bool,
+    },
     /// replace an array element by index
     SetIndex {
         /// file path
@@ -552,6 +602,75 @@ fn run(cli: Cli) -> Result<u8, String> {
             let src = read_input(&file)?;
             let mut df = oii::DocFile::parse(&src)?;
             df.remove(&path)?;
+            if write {
+                df.save_as(&file)?;
+                Ok(0)
+            } else {
+                print!("{}", df.text());
+                Ok(0)
+            }
+        }
+        Cmd::Toggle {
+            file,
+            path,
+            off,
+            on,
+            write,
+        } => {
+            let src = read_input(&file)?;
+            let mut df = oii::DocFile::parse(&src)?;
+            if on || off {
+                df.set_enabled(&path, on && !off)?;
+            } else {
+                df.toggle(&path)?;
+            }
+            if write {
+                df.save_as(&file)?;
+                Ok(0)
+            } else {
+                print!("{}", df.text());
+                Ok(0)
+            }
+        }
+        Cmd::SetTy {
+            file,
+            path,
+            ty,
+            write,
+        } => {
+            let src = read_input(&file)?;
+            let mut df = oii::DocFile::parse(&src)?;
+            let ty = if ty == "-" { None } else { Some(ty.as_str()) };
+            df.set_ty(&path, ty)?;
+            if write {
+                df.save_as(&file)?;
+                Ok(0)
+            } else {
+                print!("{}", df.text());
+                Ok(0)
+            }
+        }
+        Cmd::Rename {
+            file,
+            path,
+            name,
+            write,
+        } => {
+            let src = read_input(&file)?;
+            let mut df = oii::DocFile::parse(&src)?;
+            df.rename(&path, &name)?;
+            if write {
+                df.save_as(&file)?;
+                Ok(0)
+            } else {
+                print!("{}", df.text());
+                Ok(0)
+            }
+        }
+        Cmd::Sort { file, path, write } => {
+            let src = read_input(&file)?;
+            let mut df = oii::DocFile::parse(&src)?;
+            df.sort_attrs(&path)?;
             if write {
                 df.save_as(&file)?;
                 Ok(0)

@@ -33,7 +33,24 @@ struct Cells {
     children: Vec<Node>,
 }
 
-fn scalar_parser(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone {
+// a name token. bare or quoted so keywords can be data
+fn name_parser(lang: Lang) -> impl Parser<Kind, String, Error = TokErr> + Clone {
+    choice((
+        select!(Kind::Name(s) => s),
+        select!(Kind::Str(s) => s),
+        select!(Kind::RawStr(s) => s),
+    ))
+    .labelled(tr(lang, "名称", "name"))
+}
+
+// (type) annotation
+fn type_ann() -> impl Parser<Kind, String, Error = TokErr> + Clone {
+    just(Kind::LParen)
+        .ignore_then(select!(Kind::Name(s) => s))
+        .then_ignore(just(Kind::RParen))
+}
+
+fn base_scalar(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone {
     choice((
         select!(Kind::Str(s) => Value::Str(s)).labelled(tr(lang, "字符串", "string")),
         select!(Kind::RawStr(s) => Value::RawStr(s)).labelled(tr(lang, "原始串", "raw")),
@@ -43,11 +60,21 @@ fn scalar_parser(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone
         select!(Kind::Null => Value::Null).labelled("null"),
         select!(Kind::Name(s) => Value::Bare(s)).labelled(tr(lang, "裸词", "bare")),
     ))
-    .labelled(tr(lang, "值", "value"))
+}
+
+fn scalar_parser(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone {
+    let typed = type_ann()
+        .then(base_scalar(lang))
+        .map(|(ty, v)| Value::Typed {
+            ty,
+            value: Box::new(v),
+        });
+    choice((typed, base_scalar(lang))).labelled(tr(lang, "值", "value"))
 }
 
 fn value_parser(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone {
     recursive(move |value| {
+        let scalar = base_scalar(lang);
         let array = just(Kind::LBracket)
             .ignored()
             .then(
@@ -59,16 +86,20 @@ fn value_parser(lang: Lang) -> impl Parser<Kind, Value, Error = TokErr> + Clone 
             .then_ignore(just(Kind::RBracket).ignored())
             .map(|(_, vals)| Value::Array(vals))
             .labelled(tr(lang, "数组", "array"));
-        let scalar = scalar_parser(lang);
-        choice((scalar, array)).labelled(tr(lang, "值", "value"))
+        let base = choice((scalar, array));
+        let typed = type_ann().then(base.clone()).map(|(ty, v)| Value::Typed {
+            ty,
+            value: Box::new(v),
+        });
+        choice((typed, base)).labelled(tr(lang, "值", "value"))
     })
 }
 
 fn node_parser(lang: Lang) -> impl Parser<Kind, Node, Error = TokErr> + Clone {
     recursive(move |node| {
-        let name = select!(Kind::Name(s) => s).labelled(tr(lang, "节点名", "name"));
+        let name = name_parser(lang);
         let value = value_parser(lang);
-        let scalar_value = scalar_parser(lang);
+        let scalar = scalar_parser(lang);
         let attr =
             name.clone()
                 .then(
@@ -76,10 +107,27 @@ fn node_parser(lang: Lang) -> impl Parser<Kind, Node, Error = TokErr> + Clone {
                         .labelled(tr(lang, "`:` 或 `=`", "`:` or `=`")),
                 )
                 .then(value.clone())
-                .map(|((key, _), value)| Attribute { key, value })
+                .map(|((key, _), value)| Attribute {
+                    key,
+                    value,
+                    enabled: true,
+                })
                 .labelled(tr(lang, "属性", "attr"));
+        // slashdash disables the next attr or arg
+        let disabled_attr = just(Kind::SlashDash)
+            .ignored()
+            .ignore_then(attr.clone())
+            .map(|mut a| {
+                a.enabled = false;
+                a
+            });
+        let disabled_arg = just(Kind::SlashDash)
+            .ignored()
+            .ignore_then(scalar.clone())
+            .map(|v| Value::Disabled(Box::new(v)));
+        let arg = choice((disabled_arg, scalar));
         let cell = choice((
-            attr.clone().map(|a| Cells {
+            choice((disabled_attr, attr)).map(|a| Cells {
                 attrs: vec![a],
                 children: Vec::new(),
             }),
@@ -104,16 +152,22 @@ fn node_parser(lang: Lang) -> impl Parser<Kind, Node, Error = TokErr> + Clone {
                 (attrs, children)
             })
             .labelled(tr(lang, "节点体", "body"));
-        name.clone()
-            .then(scalar_value.repeated())
+        just(Kind::SlashDash)
+            .ignored()
+            .or_not()
+            .then(type_ann().or_not())
+            .then(name.clone())
+            .then(arg.repeated())
             .then(body.or_not())
-            .map(|((name, args), body)| {
+            .map(|((((dash, ty), name), args), body)| {
                 let (attributes, children) = body.unwrap_or((Vec::new(), Vec::new()));
                 Node {
                     name,
                     args,
                     attributes,
                     children,
+                    enabled: dash.is_none(),
+                    ty,
                 }
             })
             .labelled(tr(lang, "节点", "node"))

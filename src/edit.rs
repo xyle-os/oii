@@ -375,6 +375,171 @@ impl DocFile {
         self.remove_line_span(e.0, e.1)
     }
 
+    // slashdash a node or attr on or off
+    pub fn set_enabled(&mut self, path: &str, on: bool) -> Result<(), String> {
+        self.transaction(|f| f.set_enabled_impl(path, on))
+    }
+
+    pub fn toggle(&mut self, path: &str) -> Result<(), String> {
+        let span = self.item_span(path)?;
+        // currently disabled means we enable it
+        let on = self.text[span.0..].starts_with("/-");
+        self.set_enabled(path, on)
+    }
+
+    fn set_enabled_impl(&mut self, path: &str, on: bool) -> Result<(), String> {
+        let span = self.item_span(path)?;
+        let has = self.text[span.0..].starts_with("/-");
+        if on && has {
+            self.splice((span.0, span.0 + 2), "")
+        } else if !on && !has {
+            self.splice((span.0, span.0), "/-")
+        } else {
+            Ok(())
+        }
+    }
+
+    // set or clear a (type) annotation on a node or an attr value
+    pub fn set_ty(&mut self, path: &str, ty: Option<&str>) -> Result<(), String> {
+        self.transaction(|f| f.set_ty_impl(path, ty))
+    }
+
+    fn set_ty_impl(&mut self, path: &str, ty: Option<&str>) -> Result<(), String> {
+        let segs: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+        if segs.is_empty() {
+            return Err("empty path".to_string());
+        }
+        let layout = top_layout(&self.text);
+        if let Some(n) = find_node(&layout.nodes, segs[0], &segs[1..]) {
+            let mut at = n.full_span.0;
+            if self.text[at..].starts_with("/-") {
+                at += 2;
+            }
+            return self.apply_ty(at, ty);
+        }
+        if segs.len() >= 2 {
+            let (name, rest) = segs.split_first().unwrap();
+            let key = rest.last().unwrap();
+            let descend = &rest[..rest.len() - 1];
+            if let Some(n) = find_node(&layout.nodes, name, descend) {
+                if let Some(a) = n.attrs.iter().find(|a| a.key == *key) {
+                    return self.apply_ty(a.value_span.0, ty);
+                }
+            }
+        }
+        Err(format!("no node or attr at `{path}`"))
+    }
+
+    // at is where the value or node starts, before any (ty)
+    fn apply_ty(&mut self, at: usize, ty: Option<&str>) -> Result<(), String> {
+        let rest = &self.text[at.min(self.text.len())..];
+        if rest.starts_with('(') {
+            if let Some(close) = rest.find(')') {
+                let end = at + close + 1;
+                let repl = ty.map(|t| format!("({t})")).unwrap_or_default();
+                return self.splice((at, end), &repl);
+            }
+        }
+        match ty {
+            Some(t) => self.splice((at, at), &format!("({t})")),
+            None => Ok(()),
+        }
+    }
+
+    // rename a node or an attr key in place
+    pub fn rename(&mut self, path: &str, new_name: &str) -> Result<(), String> {
+        self.transaction(|f| f.rename_impl(path, new_name))
+    }
+
+    fn rename_impl(&mut self, path: &str, new_name: &str) -> Result<(), String> {
+        let segs: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+        if segs.is_empty() {
+            return Err("empty path".to_string());
+        }
+        let rendered = crate::fmt::quote_name(new_name);
+        let layout = top_layout(&self.text);
+        if let Some(n) = find_node(&layout.nodes, segs[0], &segs[1..]) {
+            return self.splice(n.name_span, &rendered);
+        }
+        if segs.len() >= 2 {
+            let (name, rest) = segs.split_first().unwrap();
+            let key = rest.last().unwrap();
+            let descend = &rest[..rest.len() - 1];
+            if let Some(n) = find_node(&layout.nodes, name, descend) {
+                if let Some(a) = n.attrs.iter().find(|a| a.key == *key) {
+                    return self.splice(a.key_span, &rendered);
+                }
+            }
+        }
+        Err(format!("no node or attr at `{path}`"))
+    }
+
+    // sort a node's single line attrs by key. keeps each line verbatim
+    pub fn sort_attrs(&mut self, path: &str) -> Result<(), String> {
+        self.transaction(|f| f.sort_attrs_impl(path))
+    }
+
+    fn sort_attrs_impl(&mut self, path: &str) -> Result<(), String> {
+        let segs: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+        let layout = top_layout(&self.text);
+        let node = find_node(
+            &layout.nodes,
+            *segs.first().ok_or("empty path")?,
+            &segs[1..],
+        )
+        .ok_or_else(|| format!("no node `{path}`"))?;
+        if node.attrs.len() < 2 {
+            return Ok(());
+        }
+        let mut lines: Vec<(String, usize, usize)> = Vec::new();
+        for a in &node.attrs {
+            let (s, e) = a.full_span;
+            let ls = line_start(&self.text, s);
+            if !self.text[ls..s].trim().is_empty() {
+                return Err("attrs are not one per line".to_string());
+            }
+            let le = self.text[e..]
+                .find('\n')
+                .map(|i| e + i)
+                .unwrap_or(self.text.len());
+            if !self.text[e..le].trim().is_empty() {
+                return Err("attr line has trailing text".to_string());
+            }
+            lines.push((a.key.clone(), ls, le));
+        }
+        let first = lines.iter().map(|x| x.1).min().unwrap();
+        let last = lines.iter().map(|x| x.2).max().unwrap();
+        let mut sorted = lines.clone();
+        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        let out: Vec<&str> = sorted
+            .iter()
+            .map(|(_, ls, le)| &self.text[*ls..*le])
+            .collect();
+        self.splice((first, last), &out.join("\n"))
+    }
+
+    fn item_span(&self, path: &str) -> Result<Span, String> {
+        let segs: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+        if segs.is_empty() {
+            return Err("empty path".to_string());
+        }
+        let layout = top_layout(&self.text);
+        if let Some(n) = find_node(&layout.nodes, segs[0], &segs[1..]) {
+            return Ok(n.full_span);
+        }
+        if segs.len() >= 2 {
+            let (name, rest) = segs.split_first().unwrap();
+            let key = rest.last().unwrap();
+            let descend = &rest[..rest.len() - 1];
+            if let Some(n) = find_node(&layout.nodes, name, descend) {
+                if let Some(a) = n.attrs.iter().find(|a| a.key == *key) {
+                    return Ok(a.full_span);
+                }
+            }
+        }
+        Err(format!("no node or attr at `{path}`"))
+    }
+
     // raw byte range replace. the caller owns the bytes. reparse validates
     pub fn replace(&mut self, start: usize, end: usize, replacement: &str) -> Result<(), String> {
         self.splice((start, end), replacement)
@@ -548,28 +713,19 @@ impl DocFile {
             match kind {
                 Kind::RBracket => break,
                 Kind::Comma => i += 1,
-                Kind::LBracket => {
-                    // balanced group
-                    let mut d = 0i32;
+                Kind::SlashDash => {
+                    // disabled element. span starts at the dash
+                    let mut j = i + 1;
+                    let end = elem_end_at(sub, t, &mut j);
+                    out.push((span.0 + off, span.0 + end));
+                    i = j;
+                }
+                Kind::LParen => {
+                    // typed element. span covers the (ty) and the value
                     let mut j = i;
-                    loop {
-                        match &t[j].0 {
-                            Kind::LBracket => d += 1,
-                            Kind::RBracket => {
-                                d -= 1;
-                                if d == 0 {
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                        j += 1;
-                        if j >= t.len() {
-                            break;
-                        }
-                    }
-                    out.push((span.0 + off, span.0 + token_end(sub, t[j].1, &t[j].0)));
-                    i = j + 1;
+                    let end = elem_end_at(sub, t, &mut j);
+                    out.push((span.0 + off, span.0 + end));
+                    i = j;
                 }
                 _ => {
                     out.push((span.0 + off, span.0 + token_end(sub, *off, kind)));
@@ -756,7 +912,7 @@ fn lookup_in_node<'a>(node: &'a Node, segs: &[&str]) -> Option<&'a Value> {
 
 fn lookup_in_value<'a>(v: &'a Value, segs: &[&str]) -> Option<&'a Value> {
     let (head, rest) = segs.split_first()?;
-    match v {
+    match v.inner() {
         Value::Map(_) => {
             let next = v.map_get(head)?;
             lookup_in_value(next, rest)
@@ -772,6 +928,7 @@ fn lookup_in_value<'a>(v: &'a Value, segs: &[&str]) -> Option<&'a Value> {
 // layout tree byte spans only no ast
 struct NodeLayout {
     name: String,
+    name_span: Span,
     depth: usize,
     full_span: Span,
     open_span: Option<Span>,
@@ -783,6 +940,7 @@ struct NodeLayout {
 #[derive(Clone)]
 struct AttrLayout {
     key: String,
+    key_span: Span,
     value_span: Span,
     full_span: Span,
 }
@@ -823,15 +981,61 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn name_at(&self, i: usize) -> Option<String> {
+        match self.kind(i) {
+            Some(Kind::Name(s)) | Some(Kind::Str(s)) | Some(Kind::RawStr(s)) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
     fn is_attr(&self, i: usize) -> bool {
-        matches!(self.kind(i), Some(Kind::Name(_)))
+        self.name_at(i).is_some()
             && matches!(self.kind(i + 1), Some(Kind::Colon) | Some(Kind::Equals))
     }
 
+    // skip a balanced (type) group when present
+    fn skip_type_ann(&self, i: &mut usize) {
+        if matches!(self.kind(*i), Some(Kind::LParen)) {
+            let mut d = 0i32;
+            while *i < self.t.len() {
+                match self.kind(*i) {
+                    Some(Kind::LParen) => d += 1,
+                    Some(Kind::RParen) => {
+                        d -= 1;
+                        if d == 0 {
+                            *i += 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                *i += 1;
+            }
+        }
+    }
+
     fn value_end(&self, i: usize) -> usize {
-        if matches!(self.kind(i), Some(Kind::LBracket)) {
+        let mut j = i;
+        // a value may carry a (type) prefix
+        if matches!(self.kind(j), Some(Kind::LParen)) {
+            let mut d = 0i32;
+            while j < self.t.len() {
+                match self.kind(j) {
+                    Some(Kind::LParen) => d += 1,
+                    Some(Kind::RParen) => {
+                        d -= 1;
+                        if d == 0 {
+                            j += 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+        }
+        if matches!(self.kind(j), Some(Kind::LBracket)) {
             let mut depth = 0i32;
-            let mut j = i;
             while j < self.t.len() {
                 match self.kind(j) {
                     Some(Kind::LBracket) => depth += 1,
@@ -847,7 +1051,16 @@ impl<'a> Builder<'a> {
             }
             return self.src.len();
         }
-        self.tok_end(i)
+        self.tok_end(j)
+    }
+
+    // take one value starting at i. advances i past it. returns its end byte
+    fn consume_value(&self, i: &mut usize) -> usize {
+        let end = self.value_end(*i);
+        while *i < self.t.len() && self.start(*i) < end {
+            *i += 1;
+        }
+        end
     }
 
     fn tok_end(&self, i: usize) -> usize {
@@ -857,12 +1070,9 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn parse_attr(&self, i: &mut usize) -> AttrLayout {
-        let key = match self.kind(*i) {
-            Some(Kind::Name(s)) => s.clone(),
-            _ => String::new(),
-        };
-        let key_start = self.start(*i);
+    fn parse_attr(&self, i: &mut usize, start: usize) -> AttrLayout {
+        let key = self.name_at(*i).unwrap_or_default();
+        let key_span = (self.start(*i), self.tok_end(*i));
         *i += 1; // key
         *i += 1; // separator
         let vstart = *i;
@@ -874,35 +1084,38 @@ impl<'a> Builder<'a> {
         self.skip_commas(i);
         AttrLayout {
             key,
+            key_span,
             value_span: (self.start(vstart), vend),
-            full_span: (key_start, vend),
+            full_span: (start, vend),
         }
     }
 
-    fn parse_node(&self, i: &mut usize, depth: usize) -> NodeLayout {
-        let name = match self.kind(*i) {
-            Some(Kind::Name(s)) => s.clone(),
-            _ => String::new(),
-        };
-        let start = self.start(*i);
+    fn parse_node(&self, i: &mut usize, depth: usize, start: usize) -> NodeLayout {
+        let name = self.name_at(*i).unwrap_or_default();
+        let name_span = (self.start(*i), self.tok_end(*i));
+        let name_end = self.tok_end(*i);
         *i += 1;
         // scalar args until a body or attr key
-        let mut end = start + name.len();
+        let mut end = name_end;
         while *i < self.t.len() {
             if self.is_attr(*i) {
                 break;
             }
             match self.kind(*i) {
                 Some(Kind::LBracket) | Some(Kind::RBracket) | Some(Kind::Comma) => break,
+                Some(Kind::SlashDash) => {
+                    *i += 1;
+                    end = self.consume_value(i);
+                }
                 Some(Kind::Name(_))
                 | Some(Kind::Str(_))
                 | Some(Kind::RawStr(_))
                 | Some(Kind::Int(_))
                 | Some(Kind::Float(_))
                 | Some(Kind::Bool(_))
-                | Some(Kind::Null) => {
-                    end = self.value_end(*i);
-                    *i += 1;
+                | Some(Kind::Null)
+                | Some(Kind::LParen) => {
+                    end = self.consume_value(i);
                 }
                 _ => break,
             }
@@ -925,20 +1138,26 @@ impl<'a> Builder<'a> {
                         *i += 1;
                         break;
                     }
-                    Some(Kind::Name(_)) if self.is_attr(*i) => {
-                        attrs.push(self.parse_attr(i));
-                    }
-                    Some(Kind::Name(_)) => {
-                        children.push(self.parse_node(i, depth + 1));
-                    }
                     _ => {
-                        *i += 1;
+                        let item_start = self.start(*i);
+                        if matches!(self.kind(*i), Some(Kind::SlashDash)) {
+                            *i += 1;
+                        }
+                        self.skip_type_ann(i);
+                        if self.is_attr(*i) {
+                            attrs.push(self.parse_attr(i, item_start));
+                        } else if self.name_at(*i).is_some() {
+                            children.push(self.parse_node(i, depth + 1, item_start));
+                        } else {
+                            *i += 1;
+                        }
                     }
                 }
             }
         }
         NodeLayout {
             name,
+            name_span,
             depth,
             full_span: (start, full_end),
             open_span,
@@ -1022,7 +1241,6 @@ fn top_layout(src: &str) -> Layout {
         match b.kind(i) {
             None => break,
             Some(Kind::Fun) => funcs.push(b.parse_func(&mut i, 0)),
-            Some(Kind::Name(_)) => nodes.push(b.parse_node(&mut i, 0)),
             Some(Kind::Impt) => {
                 i += 1;
                 while matches!(
@@ -1032,7 +1250,18 @@ fn top_layout(src: &str) -> Layout {
                     i += 1;
                 }
             }
-            _ => i += 1,
+            _ => {
+                let item_start = b.start(i);
+                if matches!(b.kind(i), Some(Kind::SlashDash)) {
+                    i += 1;
+                }
+                b.skip_type_ann(&mut i);
+                if b.name_at(i).is_some() {
+                    nodes.push(b.parse_node(&mut i, 0, item_start));
+                } else {
+                    i += 1;
+                }
+            }
         }
     }
     Layout { nodes, funcs }
@@ -1110,7 +1339,15 @@ fn last_bare_child(n: &NodeLayout) -> Option<usize> {
 
 // compare an array element text to a wanted name. strips quotes
 fn match_want(txt: &str, want: &str) -> bool {
-    let t = txt.trim();
+    let mut t = txt.trim();
+    if let Some(rest) = t.strip_prefix("/-") {
+        t = rest.trim_start();
+    }
+    if t.starts_with('(') {
+        if let Some(close) = t.find(')') {
+            t = t[close + 1..].trim_start();
+        }
+    }
     if t == want {
         return true;
     }
@@ -1122,6 +1359,55 @@ fn match_want(txt: &str, want: &str) -> bool {
         t
     };
     inner == want
+}
+
+// byte end of one array element. j sits at the element start and moves past it
+fn elem_end_at(sub: &str, t: &[(Kind, usize)], j: &mut usize) -> usize {
+    if matches!(t.get(*j).map(|x| &x.0), Some(Kind::LParen)) {
+        let mut d = 0i32;
+        loop {
+            match t.get(*j).map(|x| &x.0) {
+                Some(Kind::LParen) => d += 1,
+                Some(Kind::RParen) => {
+                    d -= 1;
+                    if d == 0 {
+                        *j += 1;
+                        break;
+                    }
+                }
+                Some(_) => {}
+                None => return sub.len(),
+            }
+            *j += 1;
+        }
+    }
+    if matches!(t.get(*j).map(|x| &x.0), Some(Kind::LBracket)) {
+        let mut d = 0i32;
+        while *j < t.len() {
+            match &t[*j].0 {
+                Kind::LBracket => d += 1,
+                Kind::RBracket => {
+                    d -= 1;
+                    if d == 0 {
+                        let e = token_end(sub, t[*j].1, &t[*j].0);
+                        *j += 1;
+                        return e;
+                    }
+                }
+                _ => {}
+            }
+            *j += 1;
+        }
+        return sub.len();
+    }
+    match t.get(*j) {
+        Some((k, s)) => {
+            let e = token_end(sub, *s, k);
+            *j += 1;
+            e
+        }
+        None => sub.len(),
+    }
 }
 
 // leading token of a statement line

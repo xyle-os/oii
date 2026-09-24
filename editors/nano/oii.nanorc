@@ -6,8 +6,15 @@ color brightblack "//.*$"
 color brightblack "/\\*"
 color brightblack "\\*/"
 
+# slashdash and type annotations
+color brightblack "/-"
+color brightyellow "\\([A-Za-z_][A-Za-z0-9_.-]*\\)"
+
 # impt first
 color brightblue "\\bimpt\\b"
+
+# special floats
+color magenta "#-?inf|#nan"
 
 # func and control keywords
 color brightblue "\\b(fun|desc|let|if|else|while|for|in|return)\\b"

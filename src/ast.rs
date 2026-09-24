@@ -22,28 +22,54 @@ impl Doc {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     pub name: String,
     pub args: Vec<Value>,
     pub attributes: Vec<Attribute>,
     pub children: Vec<Node>,
+    // slashdash disabled the node
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    // optional (type) annotation
+    #[serde(default)]
+    pub ty: Option<String>,
+}
+
+impl Default for Node {
+    fn default() -> Self {
+        Node {
+            name: String::new(),
+            args: Vec::new(),
+            attributes: Vec::new(),
+            children: Vec::new(),
+            enabled: true,
+            ty: None,
+        }
+    }
 }
 
 impl Node {
+    // disabled attrs are skipped so callers see the live config
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.attributes
             .iter()
-            .find(|a| a.key == key)
+            .find(|a| a.enabled && a.key == key)
             .map(|a| &a.value)
     }
 
     pub fn get_node(&self, name: &str) -> Option<&Node> {
-        self.children.iter().find(|c| c.name == name)
+        self.children.iter().find(|c| c.enabled && c.name == name)
     }
 
     pub fn find_all(&self, name: &str) -> impl Iterator<Item = &Node> {
-        self.children.iter().filter(move |c| c.name == name)
+        self.children
+            .iter()
+            .filter(move |c| c.enabled && c.name == name)
     }
 }
 
@@ -51,6 +77,8 @@ impl Node {
 pub struct Attribute {
     pub key: String,
     pub value: Value,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 // func is a named method params plus a body
@@ -180,27 +208,47 @@ pub enum Value {
     Array(Vec<Value>),
     // map is runtime only hand built via builtins
     Map(Vec<(String, Value)>),
-    // func is a runtime closure. config never holds one
+    // func is a runtime closure config never holds one
     Func(Box<Closure>),
+    // (type) annotation on a value
+    Typed { ty: String, value: Box<Value> },
+    // slashdash disabled this value or argument
+    Disabled(Box<Value>),
 }
 
 impl Value {
-    pub fn as_str(&self) -> Option<&str> {
+    // peel a (type) annotation. disabled stays as is
+    pub fn inner(&self) -> &Value {
         match self {
+            Value::Typed { value, .. } => value.inner(),
+            _ => self,
+        }
+    }
+
+    // the (type) name when present
+    pub fn ty(&self) -> Option<&str> {
+        match self {
+            Value::Typed { ty, .. } => Some(ty),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self.inner() {
             Value::Bare(s) | Value::Str(s) | Value::RawStr(s) => Some(s),
             _ => None,
         }
     }
 
     pub fn as_int(&self) -> Option<i64> {
-        match self {
+        match self.inner() {
             Value::Int(i) => Some(*i),
             _ => None,
         }
     }
 
     pub fn as_float(&self) -> Option<f64> {
-        match self {
+        match self.inner() {
             Value::Float(f) => Some(*f),
             Value::Int(i) => Some(*i as f64),
             _ => None,
@@ -208,28 +256,28 @@ impl Value {
     }
 
     pub fn as_bool(&self) -> Option<bool> {
-        match self {
+        match self.inner() {
             Value::Bool(b) => Some(*b),
             _ => None,
         }
     }
 
     pub fn as_array(&self) -> Option<&[Value]> {
-        match self {
+        match self.inner() {
             Value::Array(items) => Some(items),
             _ => None,
         }
     }
 
     pub fn as_map(&self) -> Option<&[(String, Value)]> {
-        match self {
+        match self.inner() {
             Value::Map(items) => Some(items),
             _ => None,
         }
     }
 
     pub fn is_null(&self) -> bool {
-        matches!(self, Value::Null)
+        matches!(self.inner(), Value::Null)
     }
 
     // short name for type errors and the type builtin
@@ -245,6 +293,8 @@ impl Value {
             Value::Array(_) => "array",
             Value::Map(_) => "map",
             Value::Func(_) => "func",
+            Value::Typed { .. } => self.inner().type_name(),
+            Value::Disabled(_) => "disabled",
         }
     }
 

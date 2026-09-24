@@ -125,7 +125,13 @@ fn fmt_node(n: &Node, indent: usize) -> String {
     let pad = "  ".repeat(indent);
     let inner = "  ".repeat(indent + 1);
     let mut head = String::new();
-    head.push_str(&n.name);
+    if !n.enabled {
+        head.push_str("/-");
+    }
+    if let Some(ty) = &n.ty {
+        head.push_str(&format!("({ty})"));
+    }
+    head.push_str(&quote_name(&n.name));
     for a in &n.args {
         head.push(' ');
         head.push_str(&fmt_value(a));
@@ -136,7 +142,12 @@ fn fmt_node(n: &Node, indent: usize) -> String {
     head.push_str(" [\n");
     let mut body = String::new();
     for a in &n.attributes {
-        body.push_str(&format!("{inner}{}: {},\n", a.key, fmt_value(&a.value)));
+        let dis = if a.enabled { "" } else { "/-" };
+        body.push_str(&format!(
+            "{inner}{dis}{}: {},\n",
+            quote_name(&a.key),
+            fmt_value(&a.value)
+        ));
     }
     for c in &n.children {
         body.push_str(&fmt_node(c, indent + 1));
@@ -145,6 +156,49 @@ fn fmt_node(n: &Node, indent: usize) -> String {
     body.push_str(&pad);
     body.push_str("]");
     format!("{pad}{head}{body}")
+}
+
+// bare if it lexes back as one name. else quote it
+pub fn quote_name(s: &str) -> String {
+    if is_bare_name(s) {
+        s.to_string()
+    } else {
+        format!("\"{}\"", escape_str(s))
+    }
+}
+
+fn is_bare_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' || (c as u32) > 0x7f => {}
+        _ => return false,
+    }
+    for c in chars {
+        if !(c.is_alphanumeric()
+            || c == '_'
+            || c == '.'
+            || c == '-'
+            || c == '+'
+            || (c as u32) > 0x7f)
+        {
+            return false;
+        }
+    }
+    !matches!(
+        s,
+        "impt"
+            | "fun"
+            | "let"
+            | "if"
+            | "else"
+            | "while"
+            | "for"
+            | "in"
+            | "return"
+            | "true"
+            | "false"
+            | "null"
+    )
 }
 
 // expr precedence keep parens so the tree survives a reparse
@@ -171,7 +225,7 @@ fn fmt_expr_ind(e: &Expr, parent: u8, indent: usize) -> String {
     let p = prec(e);
     let s = match e {
         Expr::Int(i) => i.to_string(),
-        Expr::Float(f) => format!("{f:?}"),
+        Expr::Float(f) => fmt_float(*f),
         Expr::Bool(b) => b.to_string(),
         Expr::Null => "null".to_string(),
         Expr::Str(s) => format!("\"{}\"", escape_str(s)),
@@ -237,7 +291,7 @@ pub fn fmt_value(v: &Value) -> String {
         Value::Str(s) => format!("\"{}\"", escape_str(s)),
         Value::RawStr(s) => fmt_raw(s),
         Value::Int(i) => i.to_string(),
-        Value::Float(f) => format!("{f:?}"),
+        Value::Float(f) => fmt_float(*f),
         Value::Bool(b) => b.to_string(),
         Value::Null => "null".to_string(),
         Value::Array(items) => {
@@ -254,17 +308,39 @@ pub fn fmt_value(v: &Value) -> String {
         }
         // func is runtime only. no literal form
         Value::Func(_) => "null".to_string(),
+        Value::Typed { ty, value } => format!("({ty}){}", fmt_value(value)),
+        Value::Disabled(v) => format!("/-{}", fmt_value(v)),
     }
 }
 
-fn fmt_raw(s: &str) -> String {
-    if s.contains("\"#") {
-        // quoted strings interpolate {var} raw does not
-        // spell { as \u{7b} so semantics survive
-        format!("\"{}\"", escape_str(s).replace('{', "\\u{7B}"))
+// non finite floats need the # form or they lex as bare words
+fn fmt_float(f: f64) -> String {
+    if f.is_nan() {
+        "#nan".to_string()
+    } else if f.is_infinite() {
+        if f.is_sign_negative() {
+            "#-inf".to_string()
+        } else {
+            "#inf".to_string()
+        }
     } else {
-        format!("#\"{s}\"#")
+        format!("{f:?}")
     }
+}
+
+// raw strings never interpolate so always use the # form. grow the hash count
+// until the content cannot close early
+fn fmt_raw(s: &str) -> String {
+    let mut n = 1;
+    loop {
+        let close = format!("\"{}", "#".repeat(n));
+        if !s.contains(&close) {
+            break;
+        }
+        n += 1;
+    }
+    let h = "#".repeat(n);
+    format!("{h}\"{s}\"{h}")
 }
 
 fn escape_str(s: &str) -> String {
